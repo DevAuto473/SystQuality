@@ -1,66 +1,206 @@
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
-        @font-face { font-family: 'Al-Mohannad'; src: local('Al Mohannad'), local('Al-Mohannad'); }
 
-        :root { 
-            --bg-sidebar: #11032b; 
-            --bg-gold: #eab308; 
-            --text-navy: #1e1b4b; 
-            --global-blue: #2563eb; 
-        }
-        
-        body { 
-            font-family: 'Cairo', sans-serif; 
-            font-size: 15px; 
-            background-color: #f8fafc; 
-            margin: 0; 
-            overflow: hidden; 
-            color: var(--text-navy); 
-        }
+@font-face {
+    font-family: 'Al-Mohannad';
+    src: local('Al Mohannad'), local('Al-Mohannad');
+}
 
-        .marquee-container { background-color: var(--bg-sidebar); color: #fff; padding: 12px 0; overflow: hidden; white-space: nowrap; border-bottom: 3px solid var(--bg-gold); font-size: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); cursor: pointer; }
-        .marquee-container:hover .marquee-content { animation-play-state: paused; }
-        .marquee-content { display: inline-block; animation: marquee 60s linear infinite; }
-        @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+:root {
+    --bg-sidebar: #11032b;
+    --bg-gold: #eab308;
+    --text-navy: #1e1b4b;
+    --global-blue: #2563eb;
+}
 
-        /* Print Styles */
-        @media screen { .print-only-header, .print-signature-block { display: none !important; } }
-        @media print {
-            @page { size: A4 landscape; margin: 10mm; }
-            body { background-color: white !important; font-size: 11pt !important; overflow: visible !important; color: black !important; }
-            .no-print, .sidebar, .global-toolbar, .marquee-container { display: none !important; }
-            .print-only-header { display: flex !important; margin-bottom: 20px; border-bottom: 3px solid #1e1b4b; padding-bottom: 10px; }
-            .print-signature-block { display: block !important; margin-top: 30px; padding-top: 20px; border-top: 2px solid #ccc; page-break-inside: avoid; }
-            .print-area { display: block !important; width: 100% !important; }
-            .main-content { margin: 0 !important; padding: 0 !important; height: auto !important; overflow: visible !important; }
-            .card { break-inside: avoid; border: 1px solid #e2e8f0 !important; box-shadow: none !important; margin-bottom: 15px !important; }
-            * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; }
-        }
+body {
+    font-family: 'Cairo', sans-serif;
+    font-size: 15px;
+    background-color: #f8fafc;
+    margin: 0;
+    overflow: hidden;
+    color: var(--text-navy);
+}
 
-        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid #f1f5f9; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        
-        .toggle-switch { position: relative; width: 44px; height: 24px; appearance: none; background: #e2e8f0; border-radius: 24px; cursor: pointer; transition: 0.3s; }
-        .toggle-switch:checked { background: #10b981; }
-        .toggle-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: white; border-radius: 50%; transition: 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-        .toggle-switch:checked::after { transform: translateX(20px); }
+.marquee-container {
+    background-color: var(--bg-sidebar);
+    color: #fff;
+    padding: 12px 0;
+    overflow: hidden;
+    white-space: nowrap;
+    border-bottom: 3px solid var(--bg-gold);
+    font-size: 14px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+}
 
-        @keyframes slideIn { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        .toast-animate { animation: slideIn 0.3s ease-out forwards; }
-        
-        /* Modern Cards */
-        .modern-card {
-            background: #ffffff;
-            border-radius: 1.5rem;
-            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
-            border: 1px solid #f1f5f9;
-            transition: all 0.3s ease;
-        }
-        
-        /* Login Background */
-        .login-bg {
-            background-image: linear-gradient(rgba(17, 3, 43, 0.9), rgba(17, 3, 43, 0.9)), url('https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=2070&q=80');
-            background-size: cover;
-            background-position: center;
-        }
+.marquee-container:hover .marquee-content {
+    animation-play-state: paused;
+}
+
+.marquee-content {
+    display: inline-block;
+    animation: marquee 60s linear infinite;
+}
+
+@keyframes marquee {
+    0% {
+        transform: translateX(100%);
+    }
+
+    100% {
+        transform: translateX(-100%);
+    }
+}
+
+/* Print Styles */
+@media screen {
+
+    .print-only-header,
+    .print-signature-block {
+        display: none !important;
+    }
+}
+
+@media print {
+    @page {
+        size: A4 landscape;
+        margin: 10mm;
+    }
+
+    body {
+        background-color: white !important;
+        font-size: 11pt !important;
+        overflow: visible !important;
+        color: black !important;
+    }
+
+    .no-print,
+    .sidebar,
+    .global-toolbar,
+    .marquee-container {
+        display: none !important;
+    }
+
+    .print-only-header {
+        display: flex !important;
+        margin-bottom: 20px;
+        border-bottom: 3px solid #1e1b4b;
+        padding-bottom: 10px;
+    }
+
+    .print-signature-block {
+        display: block !important;
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 2px solid #ccc;
+        page-break-inside: avoid;
+    }
+
+    .print-area {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    .main-content {
+        margin: 0 !important;
+        padding: 0 !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    .card {
+        break-inside: avoid;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: none !important;
+        margin-bottom: 15px !important;
+    }
+
+    * {
+        -webkit-print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+    border: 2px solid #f1f5f9;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+.toggle-switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    appearance: none;
+    background: #e2e8f0;
+    border-radius: 24px;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.toggle-switch:checked {
+    background: #10b981;
+}
+
+.toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.3s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch:checked::after {
+    transform: translateX(20px);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.toast-animate {
+    animation: slideIn 0.3s ease-out forwards;
+}
+
+/* Modern Cards */
+.modern-card {
+    background: #ffffff;
+    border-radius: 1.5rem;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f1f5f9;
+    transition: all 0.3s ease;
+}
+
+/* Login Background */
+.login-bg {
+    background-image: linear-gradient(rgba(17, 3, 43, 0.9), rgba(17, 3, 43, 0.9)), url('https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=2070&q=80');
+    background-size: cover;
+    background-position: center;
+}
