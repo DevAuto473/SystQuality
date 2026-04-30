@@ -39,10 +39,10 @@ const DEFAULT_DICTIONARY = {
 };
 
 const INIT_SURVEYS = [
-    { id: 'S1', title: 'استبانة رضا المستفيد (طلاب)', target: 'طلاب', status: 'نشط', autoStart: '', autoClose: '', isAuto: false, icon: 'users' },
-    { id: 'S2', title: 'استبانة رضا المعلمين', target: 'معلمين', status: 'نشط', autoStart: '', autoClose: '', isAuto: false, icon: 'book-open' },
-    { id: 'S3', title: 'استبانة رضا ولي الأمر', target: 'أولياء أمور', status: 'نشط', autoStart: '', autoClose: '', isAuto: false, icon: 'home' },
-    { id: 'S4', title: 'استبانة التميز المؤسسي (الجودة)', target: 'إداريين', status: 'نشط', autoStart: '', autoClose: '', isAuto: false, icon: 'award' }
+    { id: 'S1', title: 'استبانة رضا المستفيد (طلاب)', target: 'طلاب', status: 'نشط', location: 'مكة المكرمة', stage: 'ابتدائية', autoStart: '', autoClose: '', isAuto: false, icon: 'users' },
+    { id: 'S2', title: 'استبانة رضا المعلمين', target: 'معلمين', status: 'نشط', location: 'مكة المكرمة', stage: 'ابتدائية', autoStart: '', autoClose: '', isAuto: false, icon: 'book-open' },
+    { id: 'S3', title: 'استبانة رضا ولي الأمر', target: 'أولياء أمور', status: 'نشط', location: 'مكة المكرمة', stage: 'ابتدائية', autoStart: '', autoClose: '', isAuto: false, icon: 'home' },
+    { id: 'S4', title: 'استبانة التميز المؤسسي (الجودة)', target: 'إداريين', status: 'نشط', location: 'مكة المكرمة', stage: 'ابتدائية', autoStart: '', autoClose: '', isAuto: false, icon: 'award' }
 ];
 
 const DEFAULT_LOGOS = {
@@ -65,6 +65,7 @@ const SurveyQuestion = React.memo(({ q, currentData, updateAssessment, isMissing
     const currentScore = currentData.score;
     const [showNote, setShowNote] = useState(!!currentData.note);
     const [localNote, setLocalNote] = useState(currentData.note || '');
+    const [hoverScore, setHoverScore] = useState(0);
 
     const handleNoteChange = (e) => {
         setLocalNote(e.target.value);
@@ -90,18 +91,24 @@ const SurveyQuestion = React.memo(({ q, currentData, updateAssessment, isMissing
                 </div>
                 <div className="flex flex-col items-end gap-3 shrink-0">
                     {(!q.type || q.type === 'scale') ? (
-                        <div className="flex gap-2 bg-gray-50 p-2 rounded-2xl no-print border border-gray-100">
-                            {[1, 2, 3, 4, 5].map(score => (
-                                <button key={score} onClick={() => updateAssessment(assessmentKey, q.id, 'score', score)}
-                                    className={`w-10 h-10 rounded-xl font-black text-sm transition-all duration-200 ${currentScore === score ? 'bg-[#eab308] text-[#1e1b4b] shadow-md scale-105' : 'text-gray-400 hover:bg-white hover:text-gray-700'}`}
-                                    title={`${(score / 5) * 100}%`}
-                                >
-                                    {score}
-                                </button>
-                            ))}
+                        <div className="flex gap-2 bg-gray-50 p-2 rounded-2xl no-print border border-gray-100" onMouseLeave={() => setHoverScore(0)}>
+                            {[1, 2, 3, 4, 5].map(score => {
+                                const isActive = hoverScore ? score <= hoverScore : score <= currentScore;
+                                return (
+                                    <button
+                                        key={score}
+                                        onClick={() => updateAssessment(assessmentKey, q.id, 'score', score)}
+                                        onMouseEnter={() => setHoverScore(score)}
+                                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 ${isActive ? 'text-[#eab308] scale-110 drop-shadow-md' : 'text-gray-300 hover:text-gray-400'}`}
+                                        title={`${(score / 5) * 100}%`}
+                                    >
+                                        <Icon name="star" className={`w-6 h-6 ${isActive ? 'fill-current' : ''}`} />
+                                    </button>
+                                );
+                            })}
                         </div>
                     ) : (
-                        <textarea 
+                        <textarea
                             value={currentData.textAnswer || ''}
                             onChange={(e) => updateAssessment(assessmentKey, q.id, 'textAnswer', e.target.value)}
                             placeholder="اكتب إجابتك هنا..."
@@ -188,9 +195,16 @@ function App() {
     const [selectedLocation, setSelectedLocation] = useState('مكة المكرمة');
     const [selectedStage, setSelectedStage] = useState('ابتدائية');
     const [dashboardTarget, setDashboardTarget] = useState('إداريين');
-    const [compareType, setCompareType] = useState('cities');
+    const [compareScope, setCompareScope] = useState('all');
+    const [compareViewMode, setCompareViewMode] = useState('domains');
+    
+    const [archiveFilterLoc, setArchiveFilterLoc] = useState('');
+    const [archiveFilterStg, setArchiveFilterStg] = useState('');
+    const [archiveFilterTrg, setArchiveFilterTrg] = useState('');
 
     // Quick QR generation state
+    const [selectedLinkTarget, setSelectedLinkTarget] = useState('طلاب');
+    const [selectedSurveyId, setSelectedSurveyId] = useState('');
     const [generatedLink, setGeneratedLink] = useState('');
     const [qrUrl, setQrUrl] = useState('');
 
@@ -226,7 +240,7 @@ function App() {
 
     if (publicViewState.isActive) {
         const s = surveys.find(x => x.id === publicViewState.surveyId);
-        
+
         if (!s || s.status !== 'نشط') {
             return (
                 <div className="flex h-screen w-full bg-white items-center justify-center p-6" dir="rtl">
@@ -243,7 +257,7 @@ function App() {
         const cooldowns = JSON.parse(localStorage.getItem('falah_v10_cooldowns')) || {};
         const lastSubmit = cooldowns[s.id];
         const sevenDays = 7 * 24 * 60 * 60 * 1000;
-        
+
         if (lastSubmit && (Date.now() - new Date(lastSubmit).getTime()) < sevenDays) {
             return (
                 <div className="flex h-screen w-full bg-white items-center justify-center p-6" dir="rtl">
@@ -271,31 +285,61 @@ function App() {
         }
 
         const surveyData = dict[s.target];
-        const key = `${publicViewState.location}-${publicViewState.stage}-${s.target}`;
+        const key = `${s.location || 'مكة المكرمة'}-${s.stage || 'ابتدائية'}-${s.target}`;
 
-        const handlePublicSubmit = () => {
+        const handlePublicSubmit = async () => {
             const currentAnswers = currentSubmissions[key] || {};
             const missing = surveyData.questions.filter(q => {
                 if (q.required === false) return false;
                 if (q.type === 'text') return !currentAnswers[q.id]?.textAnswer?.trim();
                 return currentAnswers[q.id]?.score === undefined;
             });
-            
+
             if (missing.length > 0) {
                 setMissingQuestions(missing);
-            } else {
+                return;
+            }
+
+            try {
+                const newSubmission = {
+                    timestamp: new Date().toISOString(),
+                    answers: currentAnswers
+                };
+
+                // قراءة البيانات الحالية من التخزين المحلي مباشرة
+                const storedData = JSON.parse(localStorage.getItem('falah_v10_data')) || {};
+                const targetArray = storedData[key] || [];
+                
+                // إضافة المشاركة الجديدة
+                targetArray.push(newSubmission);
+                storedData[key] = targetArray;
+
+                // الحفظ الفوري المتزامن لضمان عدم ضياع البيانات (Zero Data Loss)
+                localStorage.setItem('falah_v10_data', JSON.stringify(storedData));
+
+                // تحديث حالة التطبيق المحلية (Assessments State) لتحديث الواجهة والنتائج
                 setAssessments(prev => ({
-                    ...prev, [key]: [...(prev[key] || []), { timestamp: new Date().toISOString(), answers: currentAnswers }]
+                    ...prev,
+                    [key]: [...(prev[key] || []), newSubmission]
                 }));
+
+                await new Promise(resolve => setTimeout(resolve, 800)); // محاكاة التحميل
+
+                // مسح الإجابات المؤقتة
                 setCurrentSubmissions(prev => {
                     const next = { ...prev }; delete next[key]; return next;
                 });
-                
+
+                // تفعيل نظام منع التكرار (Cooldown)
                 const newCooldowns = { ...cooldowns, [s.id]: new Date().toISOString() };
                 localStorage.setItem('falah_v10_cooldowns', JSON.stringify(newCooldowns));
-                
+
+                // الانتقال لشاشة النجاح
                 setPublicViewState(prev => ({ ...prev, submitted: true }));
-                window.scrollTo(0,0);
+                window.scrollTo(0, 0);
+            } catch (error) {
+                console.error("حدث خطأ أثناء حفظ التقييم:", error);
+                alert("تعذر إرسال التقييم، يرجى المحاولة مرة أخرى.");
             }
         };
 
@@ -315,7 +359,7 @@ function App() {
                         <h2 className="text-3xl font-black text-[#1e1b4b] mb-2">{s.title}</h2>
                         <p className="text-gray-500 font-bold text-sm">فرع: {publicViewState.location} | مرحلة: {publicViewState.stage}</p>
                     </div>
-                    
+
                     <div className="space-y-6">
                         {surveyData.domains.map(domain => {
                             const domainQuestions = surveyData.questions.filter(c => c.domainId === domain.id);
@@ -337,7 +381,7 @@ function App() {
                             );
                         })}
                     </div>
-                    
+
                     <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
                         <button onClick={handlePublicSubmit} className="px-10 py-4 bg-[#10b981] text-white font-black text-lg rounded-xl hover:bg-[#059669] transition-all shadow-lg flex items-center justify-center gap-2 mx-auto w-full md:w-auto">
                             <Icon name="check-circle" className="w-6 h-6" /> اعتماد وإرسال التقييم
@@ -384,7 +428,57 @@ function App() {
             localStorage.setItem('falah_v10_logos', JSON.stringify(logos));
             localStorage.setItem('falah_v10_layout', JSON.stringify(layoutPrefs));
         }
-    }, [isAuthenticated, dict, surveys, assessments, logos, layoutPrefs, activeTab, adminSubTab, compareType, activeSurveyForm]);
+    }, [isAuthenticated, dict, surveys, assessments, logos, layoutPrefs, activeTab, adminSubTab, compareScope, compareViewMode, activeSurveyForm]);
+
+    // Live Countdown Timer & Auto-Close
+    const [surveyTimers, setSurveyTimers] = useState({});
+
+    useEffect(() => {
+        const calcTimers = () => {
+            const now = Date.now();
+            const newTimers = {};
+            let needsUpdate = false;
+
+            surveys.forEach(s => {
+                if (s.autoClose && s.status === 'نشط') {
+                    const closeDateStr = s.autoClose.includes('T') ? s.autoClose : s.autoClose + 'T23:59:59';
+                    const closeDate = new Date(closeDateStr).getTime();
+                    const diff = closeDate - now;
+                    if (diff <= 0) {
+                        newTimers[s.id] = { text: 'انتهت المدة', expired: true };
+                        needsUpdate = true;
+                    } else {
+                        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                        let text = 'ينتهي بعد: ';
+                        if (days > 0) text += `${days} يوم${hours > 0 ? ` و ${hours} ساعة` : ''}`;
+                        else if (hours > 0) text += `${hours} ساعة${minutes > 0 ? ` و ${minutes} دقيقة` : ''}`;
+                        else if (minutes > 0) text += `${minutes} دقيقة`;
+                        else text += 'أقل من دقيقة';
+                        newTimers[s.id] = { text, expired: false, days };
+                    }
+                }
+            });
+
+            setSurveyTimers(newTimers);
+
+            if (needsUpdate) {
+                setSurveys(prev => prev.map(s => {
+                    if (s.autoClose && s.status === 'نشط') {
+                        const closeDateStr = s.autoClose.includes('T') ? s.autoClose : s.autoClose + 'T23:59:59';
+                        const closeDate = new Date(closeDateStr).getTime();
+                        if (closeDate <= now) return { ...s, status: 'مغلق' };
+                    }
+                    return s;
+                }));
+            }
+        };
+
+        calcTimers();
+        const interval = setInterval(calcTimers, 60000);
+        return () => clearInterval(interval);
+    }, [surveys]);
 
     // --- Handlers ---
     const handleLogin = (e) => {
@@ -430,12 +524,14 @@ function App() {
             setSurveyBuilderData({
                 isNew: false, id: existingSurvey.id, title: existingSurvey.title,
                 target: existingSurvey.target, originalTarget: existingSurvey.target,
+                location: existingSurvey.location || 'مكة المكرمة', stage: existingSurvey.stage || 'ابتدائية',
                 icon: existingSurvey.icon, status: existingSurvey.status,
                 dict: JSON.parse(JSON.stringify(dict[existingSurvey.target] || { domains: [], questions: [] }))
             });
         } else {
             setSurveyBuilderData({
                 isNew: true, id: `S${Date.now()}`, title: '', target: '', originalTarget: '',
+                location: 'مكة المكرمة', stage: 'ابتدائية',
                 icon: 'file-text', status: 'مسودة', dict: { domains: [], questions: [] }
             });
         }
@@ -448,13 +544,14 @@ function App() {
         if (!surveyBuilderData.title || !surveyBuilderData.target) {
             return showToast('الرجاء إدخال عنوان الاستبانة والفئة المستهدفة', 'error');
         }
-        
+
         setSurveys(prev => {
             const next = [...prev];
             const idx = next.findIndex(s => s.id === surveyBuilderData.id);
             const existingSurvey = idx > -1 ? next[idx] : {};
             const newSurveyObj = {
                 id: surveyBuilderData.id, title: surveyBuilderData.title, target: surveyBuilderData.target,
+                location: surveyBuilderData.location, stage: surveyBuilderData.stage,
                 status: surveyBuilderData.status, icon: surveyBuilderData.icon,
                 autoStart: existingSurvey.autoStart || '', autoClose: existingSurvey.autoClose || '', isAuto: existingSurvey.isAuto || false
             };
@@ -471,7 +568,7 @@ function App() {
             next[surveyBuilderData.target] = surveyBuilderData.dict;
             return next;
         });
-        
+
         showToast('تم حفظ الاستبانة بنجاح', 'success');
         closeSurveyBuilder();
     };
@@ -486,7 +583,7 @@ function App() {
                 return next;
             });
             showToast('تم تفريغ البيانات بنجاح', 'success');
-            setModal(prev => ({...prev, isOpen: false}));
+            setModal(prev => ({ ...prev, isOpen: false }));
         });
     };
 
@@ -502,7 +599,7 @@ function App() {
                 return next;
             });
             showToast('تم حذف الاستبانة بنجاح', 'success');
-            setModal(prev => ({...prev, isOpen: false}));
+            setModal(prev => ({ ...prev, isOpen: false }));
         });
     };
     // --- End Builder Handlers ---
@@ -540,11 +637,71 @@ function App() {
 
     // Quick QR Generation Function (Simplified)
     const handleGenerateQuickLink = () => {
-        const baseUrl = "https://alfalah-qms.edu/survey";
-        const params = `?loc=${selectedLocation}&stg=${selectedStage}`;
-        setGeneratedLink(baseUrl + params);
-        setQrUrl(`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(baseUrl + params)}&color=190538&bgcolor=ffffff`);
-        showToast('تم توليد الباركود والرابط بنجاح');
+        const baseUrl = window.location.origin + window.location.pathname;
+        const filteredSurveys = surveys.filter(s => s.target === selectedLinkTarget);
+        const currentSurveyId = selectedSurveyId || (filteredSurveys.length > 0 ? filteredSurveys[0].id : null);
+
+        if (!currentSurveyId) {
+            showToast('لا توجد استبانات لهذه الفئة', 'danger');
+            return;
+        }
+
+        const dynamicUrl = `${baseUrl}?publicSurvey=true&surveyId=${currentSurveyId}&loc=${selectedLocation}&stg=${selectedStage}`;
+        setGeneratedLink(dynamicUrl);
+        setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(dynamicUrl)}&dark=1e1b4b&size=300&centerImageUrl=https://alfalah.edu.sa/assets/images/logo.png&margin=2`);
+        showToast('تم توليد الباركود والرابط بنجاح', 'success');
+    };
+
+    // Export Utilities for Charts
+    const exportToPNG = async (elementId, filename) => {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+        const buttons = element.querySelectorAll('.export-buttons');
+        buttons.forEach(b => b.style.display = 'none');
+        try {
+            const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            const link = document.createElement('a');
+            link.download = `${filename}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            showToast('تم حفظ الصورة بنجاح', 'success');
+        } catch (error) {
+            console.error(error);
+            showToast('حدث خطأ أثناء حفظ الصورة', 'danger');
+        } finally {
+            buttons.forEach(b => b.style.display = 'flex');
+        }
+    };
+
+    const exportToPDF = async (elementId, filename) => {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+        const buttons = element.querySelectorAll('.export-buttons');
+        buttons.forEach(b => b.style.display = 'none');
+        try {
+            const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new window.jspdf.jsPDF('l', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            pdf.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfHeight);
+            pdf.save(`${filename}.pdf`);
+            showToast('تم حفظ ملف PDF بنجاح', 'success');
+        } catch (error) {
+            console.error(error);
+            showToast('حدث خطأ أثناء حفظ الـ PDF', 'danger');
+        } finally {
+            buttons.forEach(b => b.style.display = 'flex');
+        }
+    };
+
+    const exportChartExcel = (data, filename) => {
+        if (!data || data.length === 0) return showToast('لا توجد بيانات مصدرة', 'danger');
+        const ws = window.XLSX.utils.json_to_sheet(data);
+        const wb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb, ws, "البيانات المجمعة");
+        window.XLSX.writeFile(wb, `${filename}.xlsx`);
+        showToast('تم تصدير ملف Excel بنجاح', 'success');
     };
 
     // --- Analytical Engine (Percentages) ---
@@ -591,13 +748,15 @@ function App() {
     }, [assessments, selectedLocation, selectedStage, dashboardTarget, dict]);
 
     const realCompareCities = useMemo(() => {
-        const currentDict = dict[dashboardTarget];
+        const targetToUse = ['معلمين', 'إداريين'].includes(compareScope) ? compareScope : dashboardTarget;
+        const currentDict = dict[targetToUse];
         if (!currentDict) return [];
         return currentDict.domains.map(d => {
             const getCityPercent = (city) => {
                 let totalScore = 0, count = 0;
-                ['ابتدائية', 'متوسطة', 'ثانوية'].forEach(stg => {
-                    const key = `${city}-${stg}-${dashboardTarget}`;
+                const stagesToProcess = (compareScope === 'all' || ['معلمين', 'إداريين'].includes(compareScope)) ? ['ابتدائية', 'متوسطة', 'ثانوية'] : [compareScope];
+                stagesToProcess.forEach(stg => {
+                    const key = `${city}-${stg}-${targetToUse}`;
                     const list = assessments[key] || [];
                     list.forEach(sub => {
                         currentDict.questions.filter(q => q.domainId === d.id).forEach(q => {
@@ -609,21 +768,28 @@ function App() {
             };
             return { name: d.name, 'مكة المكرمة': getCityPercent('مكة المكرمة'), 'جدة': getCityPercent('جدة') };
         });
-    }, [assessments, dashboardTarget, dict]);
+    }, [assessments, dashboardTarget, dict, compareScope]);
 
-    const realCompareStages = useMemo(() => {
-        return ['ابتدائية', 'متوسطة', 'ثانوية'].map(stage => {
-            const getStagePercent = (city) => {
-                const key = `${city}-${stage}-${dashboardTarget}`;
+    const overallCompareData = useMemo(() => {
+        const targetToUse = ['معلمين', 'إداريين'].includes(compareScope) ? compareScope : dashboardTarget;
+        const currentDict = dict[targetToUse];
+        if (!currentDict) return [];
+        const getCityPercent = (city) => {
+            let totalScore = 0, count = 0;
+            const stagesToProcess = (compareScope === 'all' || ['معلمين', 'إداريين'].includes(compareScope)) ? ['ابتدائية', 'متوسطة', 'ثانوية'] : [compareScope];
+            stagesToProcess.forEach(stg => {
+                const key = `${city}-${stg}-${targetToUse}`;
                 const list = assessments[key] || [];
-                let scores = [];
-                list.forEach(sub => { Object.values(sub.answers).forEach(ans => { if (ans?.score !== undefined) scores.push(ans.score) }) });
-                return scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length / 5) * 100) : 0;
-            };
-            return { name: stage, 'مكة المكرمة': getStagePercent('مكة المكرمة'), 'جدة': getStagePercent('جدة') };
-        });
-    }, [assessments, dashboardTarget]);
-
+                list.forEach(sub => {
+                    currentDict.questions.forEach(q => {
+                        if (sub.answers[q.id]?.score !== undefined) { totalScore += sub.answers[q.id].score; count++; }
+                    });
+                });
+            });
+            return count ? Math.round((totalScore / count / 5) * 100) : 0;
+        };
+        return [{ name: 'المتوسط العام', 'مكة المكرمة': getCityPercent('مكة المكرمة'), 'جدة': getCityPercent('جدة') }];
+    }, [assessments, dashboardTarget, dict, compareScope]);
     const archiveData = useMemo(() => {
         let records = [];
         ['مكة المكرمة', 'جدة'].forEach(loc => {
@@ -777,7 +943,7 @@ function App() {
         if (activeSurveyForm) {
             const s = surveys.find(x => x.id === activeSurveyForm);
             const surveyData = dict[s.target];
-            const key = `${selectedLocation}-${selectedStage}-${s.target}`;
+            const key = `${s.location || 'مكة المكرمة'}-${s.stage || 'ابتدائية'}-${s.target}`;
 
             const handleValidateAndSubmit = () => {
                 const currentAnswers = currentSubmissions[key] || {};
@@ -883,15 +1049,15 @@ function App() {
         }
 
         if (surveyBuilderData) {
-            const { title, target, icon, status, dict: builderDict } = surveyBuilderData;
-            const updateField = (field, value) => setSurveyBuilderData(prev => ({...prev, [field]: value}));
-            
+            const { title, target, location, stage, icon, status, dict: builderDict } = surveyBuilderData;
+            const updateField = (field, value) => setSurveyBuilderData(prev => ({ ...prev, [field]: value }));
+
             const addDomain = () => {
                 const newDomain = { id: `d${Date.now()}`, name: 'مجال جديد', color: '#3b82f6' };
-                setSurveyBuilderData(prev => ({...prev, dict: {...prev.dict, domains: [...prev.dict.domains, newDomain]}}));
+                setSurveyBuilderData(prev => ({ ...prev, dict: { ...prev.dict, domains: [...prev.dict.domains, newDomain] } }));
             };
             const updateDomain = (dId, field, value) => {
-                setSurveyBuilderData(prev => ({ ...prev, dict: { ...prev.dict, domains: prev.dict.domains.map(d => d.id === dId ? {...d, [field]: value} : d) } }));
+                setSurveyBuilderData(prev => ({ ...prev, dict: { ...prev.dict, domains: prev.dict.domains.map(d => d.id === dId ? { ...d, [field]: value } : d) } }));
             };
             const deleteDomain = (dId) => {
                 setSurveyBuilderData(prev => ({ ...prev, dict: { ...prev.dict, domains: prev.dict.domains.filter(d => d.id !== dId), questions: prev.dict.questions.filter(q => q.domainId !== dId) } }));
@@ -899,10 +1065,10 @@ function App() {
             const addQuestion = (dId) => {
                 const qId = `Q${Date.now()}`;
                 const newQ = { id: qId, domainId: dId, displayId: builderDict.questions.length + 1, text: 'سؤال جديد', type: 'scale', required: true };
-                setSurveyBuilderData(prev => ({...prev, dict: {...prev.dict, questions: [...prev.dict.questions, newQ]}}));
+                setSurveyBuilderData(prev => ({ ...prev, dict: { ...prev.dict, questions: [...prev.dict.questions, newQ] } }));
             };
             const updateQuestion = (qId, field, value) => {
-                setSurveyBuilderData(prev => ({ ...prev, dict: { ...prev.dict, questions: prev.dict.questions.map(q => q.id === qId ? {...q, [field]: value} : q) } }));
+                setSurveyBuilderData(prev => ({ ...prev, dict: { ...prev.dict, questions: prev.dict.questions.map(q => q.id === qId ? { ...q, [field]: value } : q) } }));
             };
             const deleteQuestion = (qId) => {
                 setSurveyBuilderData(prev => ({ ...prev, dict: { ...prev.dict, questions: prev.dict.questions.filter(q => q.id !== qId) } }));
@@ -918,9 +1084,9 @@ function App() {
             };
 
             if (builderPreviewMode) {
-                 return (
-                     <div className="fixed inset-0 z-[100] bg-gray-50 overflow-y-auto w-full h-full p-6 animate-in slide-in-from-bottom-8" dir="rtl">
-                         <div className="max-w-4xl mx-auto space-y-6 pb-20 pt-10">
+                return (
+                    <div className="fixed inset-0 z-[100] bg-gray-50 overflow-y-auto w-full h-full p-6 animate-in slide-in-from-bottom-8" dir="rtl">
+                        <div className="max-w-4xl mx-auto space-y-6 pb-20 pt-10">
                             <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm mb-8 sticky top-0 z-50 border border-gray-200">
                                 <h2 className="text-xl font-black text-[#1e1b4b] flex items-center gap-2"><Icon name="eye" className="text-[#eab308]" /> وضع المعاينة: {title}</h2>
                                 <button onClick={() => setBuilderPreviewMode(false)} className="px-4 py-2 bg-rose-50 text-rose-600 rounded-lg font-bold flex items-center gap-2 hover:bg-rose-100 transition-colors"><Icon name="x" className="w-4 h-4" /> إنهاء المعاينة</button>
@@ -942,12 +1108,14 @@ function App() {
                                                         </div>
                                                         <div className="flex flex-col items-end gap-3 shrink-0">
                                                             {(!q.type || q.type === 'scale') ? (
-                                                            <div className="flex gap-2 bg-gray-50 p-2 rounded-2xl border border-gray-100">
-                                                                {[1, 2, 3, 4, 5].map(score => (
-                                                                    <button key={score} className="w-10 h-10 rounded-xl font-black text-sm transition-all duration-200 text-gray-400 hover:bg-white hover:text-gray-700">{score}</button>
-                                                                ))}
-                                                            </div>) : (
-                                                            <textarea placeholder="إجابة نصية..." className="w-full md:w-64 bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm font-bold outline-none" disabled></textarea>
+                                                                <div className="flex gap-2 bg-gray-50 p-2 rounded-2xl border border-gray-100">
+                                                                    {[1, 2, 3, 4, 5].map(score => (
+                                                                        <button key={score} className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 text-gray-300 hover:text-[#eab308]">
+                                                                            <Icon name="star" className="w-6 h-6" />
+                                                                        </button>
+                                                                    ))}
+                                                                </div>) : (
+                                                                <textarea placeholder="إجابة نصية..." className="w-full md:w-64 bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm font-bold outline-none" disabled></textarea>
                                                             )}
                                                         </div>
                                                     </div>
@@ -957,9 +1125,9 @@ function App() {
                                     </div>
                                 );
                             })}
-                         </div>
-                     </div>
-                 );
+                        </div>
+                    </div>
+                );
             }
 
             return (
@@ -982,14 +1150,35 @@ function App() {
                         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
                             <h3 className="text-lg font-black text-[#1e1b4b] mb-5 flex items-center gap-2"><Icon name="info" className="w-5 h-5 text-indigo-500" /> المعلومات الأساسية</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
                                 <div className="lg:col-span-2">
                                     <label className="text-xs font-black text-gray-500 block mb-2">عنوان الاستبانة</label>
                                     <input type="text" value={title} onChange={e => updateField('title', e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-[#1e1b4b] focus:ring-1 focus:ring-[#1e1b4b] transition-all" placeholder="مثال: استبانة رضا المعلمين" />
                                 </div>
                                 <div>
+                                    <label className="text-xs font-black text-gray-500 block mb-2">الفرع (Location)</label>
+                                    <select value={location} onChange={e => updateField('location', e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-[#1e1b4b] focus:ring-1 focus:ring-[#1e1b4b] transition-all">
+                                        <option value="مكة المكرمة">مكة المكرمة</option>
+                                        <option value="جدة">جدة</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-black text-gray-500 block mb-2">المرحلة (Stage)</label>
+                                    <select value={stage} onChange={e => updateField('stage', e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-[#1e1b4b] focus:ring-1 focus:ring-[#1e1b4b] transition-all">
+                                        <option value="ابتدائية">ابتدائية</option>
+                                        <option value="متوسطة">متوسطة</option>
+                                        <option value="ثانوية">ثانوية</option>
+                                    </select>
+                                </div>
+                                <div>
                                     <label className="text-xs font-black text-gray-500 block mb-2">الفئة المستهدفة (Key)</label>
-                                    <input type="text" value={target} onChange={e => updateField('target', e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-[#1e1b4b] focus:ring-1 focus:ring-[#1e1b4b] transition-all" placeholder="طلاب، معلمين..." />
+                                    <select value={target} onChange={e => updateField('target', e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-[#1e1b4b] focus:ring-1 focus:ring-[#1e1b4b] transition-all">
+                                        <option value="" disabled>-- اختر الفئة --</option>
+                                        <option value="إداريين">إداريين</option>
+                                        <option value="معلمين">معلمين</option>
+                                        <option value="طلاب">طلاب</option>
+                                        <option value="أولياء أمور">أولياء أمور</option>
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="text-xs font-black text-gray-500 block mb-2">الأيقونة (Lucide)</label>
@@ -1035,7 +1224,7 @@ function App() {
                                 <h3 className="text-lg font-black text-[#1e1b4b] flex items-center gap-2"><Icon name="layers" className="w-5 h-5 text-[#eab308]" /> إدارة المجالات والمعايير</h3>
                                 <button onClick={addDomain} className="px-5 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-black text-sm flex items-center gap-2 hover:bg-indigo-100 transition-colors"><Icon name="plus" className="w-4 h-4" /> مجال جديد</button>
                             </div>
-                            
+
                             {builderDict.domains.length === 0 && <div className="text-center p-12 bg-white rounded-2xl border-2 border-dashed border-gray-200 text-gray-400 font-bold flex flex-col items-center gap-3"><Icon name="box" className="w-10 h-10 text-gray-300" /> لا توجد مجالات حتى الآن. أضف مجالاً جديداً للبدء بإنشاء المعايير.</div>}
 
                             {builderDict.domains.map((domain) => (
@@ -1116,10 +1305,10 @@ function App() {
                     </div>
                     <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-[#1e1b4b] to-indigo-900 rounded-full blur-3xl opacity-50 -mr-20 -mt-20 z-0"></div>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
                     {surveys.map(s => (
-                        <div key={s.id} className={`modern-card p-8 flex flex-col group transition-all duration-300 ${s.status === 'نشط' ? 'hover:shadow-xl hover:-translate-y-1 hover:border-gray-200' : 'opacity-75'} ${isSurveyEditMode ? 'border-2 border-indigo-100 shadow-md ring-4 ring-indigo-50/50' : ''}`}>
+                        <div key={s.id} className={`modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-8 flex flex-col group transition-all duration-300 ${s.status === 'نشط' ? 'hover:shadow-xl hover:-translate-y-1 hover:border-gray-200' : 'opacity-75'} ${isSurveyEditMode ? 'border-2 border-indigo-100 shadow-md ring-4 ring-indigo-50/50' : ''}`}>
                             <div className="flex justify-between items-start mb-6">
                                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors shadow-inner ${isSurveyEditMode ? 'bg-[#1e1b4b] text-white' : 'bg-indigo-50 group-hover:bg-[#eab308] text-[#1e1b4b]'}`}>
                                     <Icon name={s.icon} className="w-6 h-6" />
@@ -1128,13 +1317,13 @@ function App() {
                             </div>
                             <h3 className="text-xl font-black text-[#1e1b4b] mb-2">{s.title}</h3>
                             <p className="text-xs font-bold text-gray-400 mb-6">مستهدفة لـ: {s.target}</p>
-                            
+
                             {s.status === 'نشط' && !isSurveyEditMode && (
                                 <button onClick={() => copyPublicLink(s.id)} className="mb-4 w-full py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-colors">
                                     <Icon name="link" className="w-4 h-4" /> نسخ الرابط العام (للمستفيدين)
                                 </button>
                             )}
-                            
+
                             {!isSurveyEditMode ? (
                                 <button onClick={() => setActiveSurveyForm(s.id)} disabled={s.status !== 'نشط'} className={`mt-auto w-full py-3.5 rounded-xl font-black flex justify-center items-center gap-2 transition-colors shadow-sm ${s.status === 'نشط' ? 'bg-[#11032b] text-white hover:bg-[#eab308] hover:text-[#11032b]' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
                                     {s.status === 'نشط' ? 'التقييم الداخلي' : 'الاستبانة مغلقة'} <Icon name="arrow-left" className="w-4 h-4" />
@@ -1161,8 +1350,17 @@ function App() {
 
     const renderDashboard = () => (
         <div className="space-y-6 animate-in slide-in-from-right-8 duration-500 pb-20 print-area">
-            <div className="modern-card p-5 flex flex-col md:flex-row gap-4 items-center no-print">
+            <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-5 flex flex-col md:flex-row gap-4 items-center no-print">
                 <div className="flex items-center gap-2 text-gray-500 font-black text-sm whitespace-nowrap"><Icon name="filter" className="w-4 h-4" /> الفلترة:</div>
+                <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} className="flex-1 p-2.5 bg-gray-50 border border-gray-200 text-[#1e1b4b] rounded-xl font-bold outline-none focus:border-[#eab308]">
+                    <option value="مكة المكرمة">مكة المكرمة</option>
+                    <option value="جدة">جدة</option>
+                </select>
+                <select value={selectedStage} onChange={e => setSelectedStage(e.target.value)} className="flex-1 p-2.5 bg-gray-50 border border-gray-200 text-[#1e1b4b] rounded-xl font-bold outline-none focus:border-[#eab308]">
+                    <option value="ابتدائية">ابتدائية</option>
+                    <option value="متوسطة">متوسطة</option>
+                    <option value="ثانوية">ثانوية</option>
+                </select>
                 <select value={dashboardTarget} onChange={e => setDashboardTarget(e.target.value)} className="flex-1 p-2.5 bg-gray-50 border border-gray-200 text-[#1e1b4b] rounded-xl font-bold outline-none focus:border-[#eab308]">
                     <option value="إداريين">نتائج الإداريين</option><option value="طلاب">نتائج الطلاب</option>
                     <option value="معلمين">نتائج المعلمين</option><option value="أولياء أمور">نتائج أولياء الأمور</option>
@@ -1175,31 +1373,47 @@ function App() {
             </div>
 
             {!dashboardStats.hasData ? (
-                <div className="modern-card p-16 flex flex-col items-center text-center">
+                <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-16 flex flex-col items-center text-center">
                     <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-4"><Icon name="bar-chart-2" className="w-8 h-8 text-gray-300" /></div>
                     <h3 className="text-xl font-black text-[#1e1b4b] mb-2">لا توجد بيانات مسجلة حالياً</h3>
                     <p className="text-sm text-gray-500 font-semibold">قم بإجراء تقييم لهذه الفئة لتظهر النتائج هنا.</p>
                 </div>
             ) : (
                 <>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="modern-card p-6 border-b-4 border-[#1e1b4b]">
-                            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-2">متوسط نسبة الإنجاز</p>
-                            <div className="text-4xl font-black text-[#1e1b4b]">{dashboardStats.avgPercent}<span className="text-lg text-gray-400">%</span></div>
+                    <div id="overall-stats-container" className="relative mb-6">
+                        <div className="flex justify-between items-center mb-4 export-buttons">
+                            <h3 className="text-lg font-black text-[#1e1b4b]">النتائج والنسب</h3>
+                            <div className="flex gap-2">
+                                <button onClick={() => exportToPNG('overall-stats-container', 'النتائج_والنسب')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PNG 🖼️</button>
+                                <button onClick={() => exportToPDF('overall-stats-container', 'النتائج_والنسب')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PDF 📄</button>
+                            </div>
                         </div>
-                        <div className="modern-card p-6 border-b-4 border-[#eab308]">
-                            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-2">إجمالي الاستبانات المرسلة</p>
-                            <div className="text-4xl font-black text-[#eab308]">{dashboardStats.total}</div>
-                        </div>
-                        <div className="modern-card p-6 border-b-4 border-emerald-500">
-                            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-2">نقاط القوة المكتشفة</p>
-                            <div className="text-4xl font-black text-emerald-600">{dashboardStats.swot.strengths.length}</div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-6 border-b-4 border-[#1e1b4b]">
+                                <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-2">متوسط نسبة الإنجاز</p>
+                                <div className="text-4xl font-black text-[#1e1b4b]">{dashboardStats.avgPercent}<span className="text-lg text-gray-400">%</span></div>
+                            </div>
+                            <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-6 border-b-4 border-[#eab308]">
+                                <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-2">إجمالي الاستبانات المرسلة</p>
+                                <div className="text-4xl font-black text-[#eab308]">{dashboardStats.total}</div>
+                            </div>
+                            <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-6 border-b-4 border-emerald-500">
+                                <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-2">نقاط القوة المكتشفة</p>
+                                <div className="text-4xl font-black text-emerald-600">{dashboardStats.swot.strengths.length}</div>
+                            </div>
                         </div>
                     </div>
 
                     <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 ${!layoutPrefs.showCharts ? 'no-print' : ''}`}>
-                        <div className="modern-card p-8 h-[400px]">
-                            <h3 className="text-lg font-black text-[#1e1b4b] mb-6 flex items-center gap-2"><Icon name="bar-chart-2" className="text-[#eab308] w-5 h-5" /> تحليل أداء المجالات (نسبة مئوية)</h3>
+                        <div id="dashboard-chart-container" className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-8 h-[400px] relative">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-lg font-black text-[#1e1b4b] flex items-center gap-2"><Icon name="bar-chart-2" className="text-[#eab308] w-5 h-5" /> تحليل أداء المجالات (نسبة مئوية)</h3>
+                                <div className="flex gap-2 export-buttons">
+                                    <button onClick={() => exportToPNG('dashboard-chart-container', 'تحليل_المجالات')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PNG 🖼️</button>
+                                    <button onClick={() => exportToPDF('dashboard-chart-container', 'تحليل_المجالات')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PDF 📄</button>
+                                    <button onClick={() => exportChartExcel(dashboardStats.domainData, 'تحليل_المجالات')} className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold hover:bg-emerald-100 border border-emerald-100">تصدير إكسل 📊</button>
+                                </div>
+                            </div>
                             {BarChart && (
                                 <ResponsiveContainer width="100%" height="85%">
                                     <BarChart data={dashboardStats.domainData} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
@@ -1215,7 +1429,7 @@ function App() {
                             )}
                         </div>
 
-                        <div className={`modern-card p-8 ${!layoutPrefs.showSWOT ? 'no-print' : ''}`}>
+                        <div className={`modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-8 ${!layoutPrefs.showSWOT ? 'no-print' : ''}`}>
                             <h3 className="text-lg font-black text-[#1e1b4b] mb-6 flex items-center gap-2"><Icon name="zap" className="text-rose-500 w-5 h-5" /> مصفوفة التحليل (SWOT)</h3>
                             <div className="grid grid-cols-1 gap-4">
                                 <div className="bg-emerald-50/50 p-5 rounded-2xl border border-emerald-100">
@@ -1238,59 +1452,98 @@ function App() {
         </div>
     );
 
-    const renderArchive = () => (
-        <div className="space-y-6 animate-in slide-in-from-right-8 duration-500 pb-20 print-area">
-            <div className="modern-card bg-gradient-to-r from-blue-900 to-[#11032b] p-10 text-white border-0 no-print">
-                <h2 className="text-3xl font-black mb-2 flex items-center gap-3"><Icon name="archive" className="text-[#eab308]" /> أرشيف الإحصائيات الشامل</h2>
-                <p className="text-blue-200 font-semibold text-sm">عرض تفصيلي لجميع الاستبانات المرصودة في النظام.</p>
-            </div>
+    const renderArchive = () => {
+        const filteredArchiveData = archiveData.filter(row => {
+            if (archiveFilterLoc && row.location !== archiveFilterLoc) return false;
+            if (archiveFilterStg && row.stage !== archiveFilterStg) return false;
+            if (archiveFilterTrg && row.target !== archiveFilterTrg) return false;
+            return true;
+        });
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 no-print">
-                <div className="modern-card p-4 text-center"><p className="text-[10px] text-gray-400 font-black uppercase">إجمالي السجلات</p><p className="text-2xl font-black text-[#1e1b4b] mt-1">{archiveData.length}</p></div>
-                <div className="modern-card p-4 text-center"><p className="text-[10px] text-gray-400 font-black uppercase">متوسط مكة</p><p className="text-2xl font-black text-emerald-600 mt-1">{Math.round(archiveData.filter(d => d.location === 'مكة المكرمة').reduce((a, b) => a + b.percentage, 0) / (archiveData.filter(d => d.location === 'مكة المكرمة').length || 1))}%</p></div>
-                <div className="modern-card p-4 text-center"><p className="text-[10px] text-gray-400 font-black uppercase">متوسط جدة</p><p className="text-2xl font-black text-blue-600 mt-1">{Math.round(archiveData.filter(d => d.location === 'جدة').reduce((a, b) => a + b.percentage, 0) / (archiveData.filter(d => d.location === 'جدة').length || 1))}%</p></div>
-                <button onClick={() => exportData('excel')} className="modern-card p-4 flex flex-col items-center justify-center text-emerald-600 hover:bg-emerald-50 cursor-pointer border-emerald-100 transition-colors"><Icon name="download" className="w-6 h-6 mb-1" /><span className="text-xs font-black">تصدير السجل</span></button>
-            </div>
+        return (
+            <div className="space-y-6 animate-in slide-in-from-right-8 duration-500 pb-20 print-area">
+                <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg bg-gradient-to-r from-blue-900 to-[#11032b] p-10 text-white border-0 no-print">
+                    <h2 className="text-3xl font-black mb-2 flex items-center gap-3"><Icon name="archive" className="text-[#eab308]" /> أرشيف الإحصائيات الشامل</h2>
+                    <p className="text-blue-200 font-semibold text-sm">عرض تفصيلي لجميع الاستبانات المرصودة في النظام.</p>
+                </div>
 
-            <div className="modern-card overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-right text-sm">
-                        <thead>
-                            <tr className="bg-gray-50 border-b border-gray-200">
-                                <th className="p-4 font-black text-gray-600">المدينة</th>
-                                <th className="p-4 font-black text-gray-600">المرحلة</th>
-                                <th className="p-4 font-black text-gray-600">الفئة المستهدفة</th>
-                                <th className="p-4 font-black text-gray-600 text-center">عدد المشاركين</th>
-                                <th className="p-4 font-black text-gray-600 text-center">التقييم العام</th>
-                                <th className="p-4 font-black text-gray-600 text-center">تاريخ التحديث</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {archiveData.length > 0 ? archiveData.map((row, idx) => (
-                                <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
-                                    <td className="p-4 font-bold text-[#1e1b4b]">{row.location}</td>
-                                    <td className="p-4 font-semibold text-gray-600"><span className="bg-gray-100 px-2 py-1 rounded-md text-xs">{row.stage}</span></td>
-                                    <td className="p-4 font-bold text-gray-700">{row.target}</td>
-                                    <td className="p-4 text-center">
-                                        <span className="text-xs font-black px-2 py-1 rounded-md bg-emerald-50 text-emerald-600">
-                                            {row.participants} مشارك
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-center">
-                                        <div className="flex items-center justify-center gap-2">
-                                            <div className="w-16 h-2 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-[#1e1b4b]" style={{ width: `${row.percentage}%` }}></div></div>
-                                            <span className="font-black text-[#1e1b4b] w-8 text-left">{row.percentage}%</span>
-                                        </div>
-                                    </td>
-                                    <td className="p-4 text-center text-xs text-gray-500 font-bold">{row.lastUpdate}</td>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 no-print">
+                    <div className="modern-card p-4">
+                        <p className="text-[10px] text-gray-400 font-black uppercase mb-3 flex items-center gap-1"><Icon name="folder" className="w-3 h-3"/> الفروع</p>
+                        <div className="flex gap-2">
+                            {['مكة المكرمة', 'جدة'].map(loc => (
+                                <button key={loc} onClick={() => setArchiveFilterLoc(archiveFilterLoc === loc ? '' : loc)} className={`flex-1 py-2 rounded-lg font-bold text-xs transition-all border ${archiveFilterLoc === loc ? 'bg-[#1e1b4b] text-white border-[#1e1b4b] shadow-md' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}>{loc}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="modern-card p-4">
+                        <p className="text-[10px] text-gray-400 font-black uppercase mb-3 flex items-center gap-1"><Icon name="folder" className="w-3 h-3"/> المراحل</p>
+                        <div className="flex gap-2">
+                            {['ابتدائية', 'متوسطة', 'ثانوية'].map(stg => (
+                                <button key={stg} onClick={() => setArchiveFilterStg(archiveFilterStg === stg ? '' : stg)} className={`flex-1 py-2 rounded-lg font-bold text-xs transition-all border ${archiveFilterStg === stg ? 'bg-[#1e1b4b] text-white border-[#1e1b4b] shadow-md' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}>{stg}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="modern-card p-4">
+                        <p className="text-[10px] text-gray-400 font-black uppercase mb-3 flex items-center gap-1"><Icon name="folder" className="w-3 h-3"/> الفئات المستهدفة</p>
+                        <div className="flex gap-2">
+                            {['إداريين', 'طلاب', 'معلمين'].map(trg => (
+                                <button key={trg} onClick={() => setArchiveFilterTrg(archiveFilterTrg === trg ? '' : trg)} className={`flex-1 py-2 rounded-lg font-bold text-xs transition-all border ${archiveFilterTrg === trg ? 'bg-[#1e1b4b] text-white border-[#1e1b4b] shadow-md' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}>{trg}</button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div id="archive-table-container" className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg overflow-hidden">
+                    <div className="p-4 border-b border-gray-100 flex justify-between items-center export-buttons">
+                        <h3 className="font-black text-[#1e1b4b]">سجل الإحصائيات <span className="text-gray-400 text-xs mr-2">({filteredArchiveData.length} سجل)</span></h3>
+                        <div className="flex gap-2">
+                            <button onClick={() => exportToPNG('archive-table-container', 'الأرشيف_الشامل')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PNG 🖼️</button>
+                            <button onClick={() => exportToPDF('archive-table-container', 'الأرشيف_الشامل')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PDF 📄</button>
+                            <button onClick={() => exportData('excel')} className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold hover:bg-emerald-100 border border-emerald-100">تصدير إكسل 📊</button>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-right text-sm block md:table">
+                            <thead className="hidden md:table-header-group">
+                                <tr className="bg-gray-50 border-b border-gray-200">
+                                    <th className="p-4 font-black text-gray-600">المدينة</th>
+                                    <th className="p-4 font-black text-gray-600">المرحلة</th>
+                                    <th className="p-4 font-black text-gray-600">الفئة المستهدفة</th>
+                                    <th className="p-4 font-black text-gray-600 text-center">عدد المشاركين</th>
+                                    <th className="p-4 font-black text-gray-600 text-center">التقييم العام</th>
+                                    <th className="p-4 font-black text-gray-600 text-center">تاريخ التحديث</th>
                                 </tr>
-                            )) : <tr><td colSpan="6" className="p-8 text-center text-gray-400 font-bold">لا توجد سجلات مؤرشفة حالياً</td></tr>}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 block md:table-row-group">
+                                {filteredArchiveData.length > 0 ? filteredArchiveData.map((row, idx) => (
+                                    <tr key={idx} className="block md:table-row p-4 md:p-0 mb-4 md:mb-0 border border-gray-100 md:border-0 rounded-xl md:rounded-none hover:bg-gray-50/50 transition-colors duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg">
+                                        <td className="flex md:table-cell justify-between items-center p-2 md:p-4 font-bold text-[#1e1b4b] border-b md:border-0 border-gray-50"><span className="md:hidden text-xs text-gray-400">المدينة:</span>{row.location}</td>
+                                        <td className="flex md:table-cell justify-between items-center p-2 md:p-4 font-semibold text-gray-600 border-b md:border-0 border-gray-50"><span className="md:hidden text-xs text-gray-400">المرحلة:</span><span className="bg-gray-100 px-2 py-1 rounded-md text-xs">{row.stage}</span></td>
+                                        <td className="flex md:table-cell justify-between items-center p-2 md:p-4 font-bold text-gray-700 border-b md:border-0 border-gray-50"><span className="md:hidden text-xs text-gray-400">الفئة:</span>{row.target}</td>
+                                        <td className="flex md:table-cell justify-between items-center p-2 md:p-4 text-center md:text-center border-b md:border-0 border-gray-50">
+                                            <span className="md:hidden text-xs text-gray-400">المشاركين:</span>
+                                            <span className="text-xs font-black px-2 py-1 rounded-md bg-emerald-50 text-emerald-600">
+                                                {row.participants} مشارك
+                                            </span>
+                                        </td>
+                                        <td className="flex md:table-cell justify-between items-center p-2 md:p-4 text-center md:text-center border-b md:border-0 border-gray-50">
+                                            <span className="md:hidden text-xs text-gray-400">التقييم:</span>
+                                            <div className="flex items-center md:justify-center gap-2">
+                                                <div className="w-16 h-2 bg-gray-100 rounded-full overflow-hidden"><div className="h-full bg-[#1e1b4b]" style={{ width: `${row.percentage}%` }}></div></div>
+                                                <span className="font-black text-[#1e1b4b] w-8 text-left">{row.percentage}%</span>
+                                            </div>
+                                        </td>
+                                        <td className="flex md:table-cell justify-between items-center p-2 md:p-4 text-center md:text-center text-xs text-gray-500 font-bold"><span className="md:hidden text-xs text-gray-400">التاريخ:</span>{row.lastUpdate}</td>
+                                    </tr>
+                                )) : <tr className="block md:table-row"><td colSpan="6" className="p-8 text-center text-gray-400 font-bold block md:table-cell">لا توجد سجلات مطابقة للبحث</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     // --- الإدارة المدمجة ---
     const renderAdmin = () => (
@@ -1340,17 +1593,23 @@ function App() {
                                             {s.status === 'نشط' ? 'إغلاق الاستبانة' : 'مغلقة (انقر للفتح)'}
                                         </button>
                                     </div>
+                                    {surveyTimers[s.id] && (
+                                        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold mb-4 ${surveyTimers[s.id].expired ? 'bg-rose-50 text-rose-600 border border-rose-100' : surveyTimers[s.id].days <= 3 ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>
+                                            <Icon name={surveyTimers[s.id].expired ? 'alert-circle' : 'timer'} className="w-3.5 h-3.5" />
+                                            {surveyTimers[s.id].text}
+                                        </div>
+                                    )}
                                     <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200">
                                         <div>
-                                            <label className="text-[10px] font-black text-gray-500 block mb-1">تاريخ الفتح (اختياري)</label>
-                                            <input type="date" value={s.autoStart || ''} onChange={(e) => {
+                                            <label className="text-[10px] font-black text-gray-500 block mb-1">تاريخ ووقت الفتح (اختياري)</label>
+                                            <input type="datetime-local" value={s.autoStart || ''} onChange={(e) => {
                                                 const up = surveys.map(x => x.id === s.id ? { ...x, autoStart: e.target.value } : x);
                                                 setSurveys(up);
                                             }} className="w-full p-2 border border-gray-200 rounded-lg text-xs font-bold outline-none focus:border-[#1e1b4b]" />
                                         </div>
                                         <div>
-                                            <label className="text-[10px] font-black text-gray-500 block mb-1">تاريخ الإغلاق (اختياري)</label>
-                                            <input type="date" value={s.autoClose || ''} onChange={(e) => {
+                                            <label className="text-[10px] font-black text-gray-500 block mb-1">تاريخ ووقت الإغلاق (اختياري)</label>
+                                            <input type="datetime-local" value={s.autoClose || ''} onChange={(e) => {
                                                 const up = surveys.map(x => x.id === s.id ? { ...x, autoClose: e.target.value } : x);
                                                 setSurveys(up);
                                             }} className="w-full p-2 border border-gray-200 rounded-lg text-xs font-bold outline-none focus:border-[#1e1b4b]" />
@@ -1449,46 +1708,55 @@ function App() {
                 {/* محرك المقارنات */}
                 {adminSubTab === 'compare' && (
                     <div className="space-y-6">
-                        <div className="modern-card p-5 flex flex-col md:flex-row gap-4 items-center bg-gray-50/50">
-                            <span className="font-black text-[#1e1b4b] whitespace-nowrap text-sm"><Icon name="sliders" className="inline w-4 h-4 ml-1" /> نوع المقارنة:</span>
-                            <button onClick={() => setCompareType('cities')} className={`flex-1 py-2 rounded-xl font-bold text-sm transition-all ${compareType === 'cities' ? 'bg-[#1e1b4b] text-white shadow-md' : 'bg-white border border-gray-200 text-gray-500'}`}>المدن (مكة/جدة)</button>
-                            <button onClick={() => setCompareType('stages')} className={`flex-1 py-2 rounded-xl font-bold text-sm transition-all ${compareType === 'stages' ? 'bg-[#1e1b4b] text-white shadow-md' : 'bg-white border border-gray-200 text-gray-500'}`}>المراحل التعليمية</button>
+                        <div className="modern-card p-5 flex flex-col md:flex-row gap-6 items-center bg-gray-50/50 justify-between">
+                            <div className="flex items-center gap-3 w-full md:w-auto">
+                                <span className="font-black text-[#1e1b4b] whitespace-nowrap text-sm"><Icon name="filter" className="inline w-4 h-4 ml-1" /> نطاق المقارنة:</span>
+                                <select value={compareScope} onChange={(e) => setCompareScope(e.target.value)} className="flex-1 md:w-48 bg-white border border-gray-200 text-[#1e1b4b] rounded-xl px-4 py-2 text-sm font-bold shadow-sm outline-none focus:ring-2 focus:ring-[#1e1b4b] transition-all">
+                                    <option value="all">مقارنة عامة (مكة ضد جدة)</option>
+                                    <option value="ابتدائية">الابتدائية (مكة ضد جدة)</option>
+                                    <option value="متوسطة">المتوسطة (مكة ضد جدة)</option>
+                                    <option value="ثانوية">الثانوية (مكة ضد جدة)</option>
+                                    <option value="معلمين">المعلمين (مكة ضد جدة)</option>
+                                    <option value="إداريين">الإداريين (مكة ضد جدة)</option>
+                                </select>
+                            </div>
+
+                            <div className="flex bg-gray-200/50 p-1 rounded-xl w-full md:w-auto">
+                                <button onClick={() => setCompareViewMode('domains')} className={`flex-1 md:px-6 py-2 rounded-lg font-bold text-sm transition-all ${compareViewMode === 'domains' ? 'bg-white text-[#1e1b4b] shadow-sm' : 'text-gray-500 hover:text-[#1e1b4b]'}`}>تفصيلي للمجالات</button>
+                                <button onClick={() => setCompareViewMode('overall')} className={`flex-1 md:px-6 py-2 rounded-lg font-bold text-sm transition-all ${compareViewMode === 'overall' ? 'bg-[#1e1b4b] text-white shadow-sm' : 'text-gray-500 hover:text-[#1e1b4b]'}`}>المتوسط العام</button>
+                            </div>
                         </div>
-                        <div className="modern-card p-8 h-[400px]">
-                            <h3 className="text-lg font-black text-[#1e1b4b] mb-6 text-center">
-                                {compareType === 'cities' ? `مقارنة أداء مجالات التقييم لفئة (${dashboardTarget}) بين مكة وجدة بالنسب المئوية` : `متوسط الأداء العام لفئة (${dashboardTarget}) حسب المراحل الدراسية بالنسب المئوية`}
-                            </h3>
 
-                            {compareType === 'cities' && BarChart && (
+                        <div id="compare-chart-container" className="modern-card p-8 h-[400px] relative">
+                            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                                <h3 className="text-lg font-black text-[#1e1b4b] text-center md:text-right">
+                                    {(() => {
+                                        const targetText = ['معلمين', 'إداريين'].includes(compareScope) ? compareScope : dashboardTarget;
+                                        const stageText = ['معلمين', 'إداريين'].includes(compareScope) || compareScope === 'all' ? 'جميع المراحل' : compareScope;
+                                        return compareViewMode === 'domains'
+                                            ? `مقارنة تفصيلية لمجالات (${targetText}) - ${stageText}`
+                                            : `المتوسط العام لأداء (${targetText}) - ${stageText}`;
+                                    })()}
+                                </h3>
+                                <div className="flex gap-2 export-buttons">
+                                    <button onClick={() => exportToPNG('compare-chart-container', 'المقارنات_الإحصائية')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PNG 🖼️</button>
+                                    <button onClick={() => exportToPDF('compare-chart-container', 'المقارنات_الإحصائية')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PDF 📄</button>
+                                    <button onClick={() => exportChartExcel(compareViewMode === 'domains' ? realCompareCities : overallCompareData, 'المقارنات_الإحصائية')} className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold hover:bg-emerald-100 border border-emerald-100">تصدير إكسل 📊</button>
+                                </div>
+                            </div>
+
+                            {BarChart && (
                                 <ResponsiveContainer width="100%" height="85%">
-                                    <BarChart data={realCompareCities} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                    <BarChart data={compareViewMode === 'domains' ? realCompareCities : overallCompareData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                         <XAxis dataKey="name" tick={{ fontFamily: 'Cairo', fontSize: 12, fontWeight: 'bold', fill: '#475569' }} axisLine={false} tickLine={false} />
                                         <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(val) => `${val}%`} />
                                         <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', fontFamily: 'Cairo', fontWeight: 'bold' }} formatter={(val) => [`${val}%`]} />
                                         <Legend wrapperStyle={{ fontFamily: 'Cairo', fontWeight: 'bold', fontSize: '12px', paddingTop: '10px' }} />
-                                        <Bar name="مكة المكرمة" dataKey="مكة المكرمة" fill="#1e1b4b" radius={[6, 6, 0, 0]} barSize={40}>
+                                        <Bar name="مكة المكرمة" dataKey="مكة المكرمة" fill="#1e1b4b" radius={[6, 6, 0, 0]} barSize={compareViewMode === 'overall' ? 80 : 40}>
                                             <LabelList dataKey="مكة المكرمة" content={<PercentageLabel />} />
                                         </Bar>
-                                        <Bar name="جدة" dataKey="جدة" fill="#eab308" radius={[6, 6, 0, 0]} barSize={40}>
-                                            <LabelList dataKey="جدة" content={<PercentageLabel />} />
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            )}
-
-                            {compareType === 'stages' && BarChart && (
-                                <ResponsiveContainer width="100%" height="85%">
-                                    <BarChart data={realCompareStages} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                        <XAxis dataKey="name" tick={{ fontFamily: 'Cairo', fontSize: 12, fontWeight: 'bold', fill: '#475569' }} axisLine={false} tickLine={false} />
-                                        <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(val) => `${val}%`} />
-                                        <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', fontFamily: 'Cairo', fontWeight: 'bold' }} formatter={(val) => [`${val}%`]} />
-                                        <Legend wrapperStyle={{ fontFamily: 'Cairo', fontWeight: 'bold', fontSize: '12px', paddingTop: '10px' }} />
-                                        <Bar name="مكة المكرمة" dataKey="مكة المكرمة" fill="#1e1b4b" radius={[6, 6, 0, 0]} barSize={40}>
-                                            <LabelList dataKey="مكة المكرمة" content={<PercentageLabel />} />
-                                        </Bar>
-                                        <Bar name="جدة" dataKey="جدة" fill="#10b981" radius={[6, 6, 0, 0]} barSize={40}>
+                                        <Bar name="جدة" dataKey="جدة" fill={compareViewMode === 'overall' ? "#10b981" : "#eab308"} radius={[6, 6, 0, 0]} barSize={compareViewMode === 'overall' ? 80 : 40}>
                                             <LabelList dataKey="جدة" content={<PercentageLabel />} />
                                         </Bar>
                                     </BarChart>
@@ -1505,6 +1773,14 @@ function App() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div className="space-y-4">
                                 <p className="text-sm font-bold text-gray-500">أنشئ رابط مباشر وسريع لفرع معين.</p>
+                                <select value={selectedLinkTarget} onChange={e => { setSelectedLinkTarget(e.target.value); setSelectedSurveyId(''); }} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl font-bold outline-none">
+                                    <option value="" disabled>-- اختر الفئة المستهدفة --</option>
+                                    {Object.keys(dict).map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <select value={selectedSurveyId} onChange={e => setSelectedSurveyId(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl font-bold outline-none">
+                                    <option value="" disabled>-- اختر الاستبانة --</option>
+                                    {surveys.filter(s => s.target === selectedLinkTarget).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+                                </select>
                                 <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl font-bold outline-none"><option>مكة المكرمة</option><option>جدة</option></select>
                                 <select value={selectedStage} onChange={e => setSelectedStage(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl font-bold outline-none"><option>ابتدائية</option><option>متوسطة</option><option>ثانوية</option></select>
                                 <button onClick={handleGenerateQuickLink} className="w-full py-3 bg-[#1e1b4b] text-white font-black rounded-xl hover:bg-blue-900 transition-colors">توليد الرابط</button>
@@ -1512,10 +1788,10 @@ function App() {
                             <div className="flex flex-col items-center justify-center p-6 bg-gray-50 border border-gray-200 rounded-2xl">
                                 {qrUrl ? (
                                     <div className="text-center w-full animate-in zoom-in">
-                                        <img src={qrUrl} className="w-32 h-32 mx-auto mb-4 bg-white p-2 rounded-xl shadow-sm" />
+                                        <img src={qrUrl} className="w-48 h-48 mx-auto mb-4 bg-white p-2 rounded-xl shadow-sm border border-gray-100 object-contain" />
                                         <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-2 mb-3">
-                                            <input type="text" readOnly value={generatedLink} className="flex-1 bg-transparent outline-none text-xs text-left dir-ltr text-blue-600 font-bold" />
-                                            <button onClick={() => { navigator.clipboard.writeText(generatedLink); showToast('تم نسخ الرابط!'); }} className="text-gray-500 hover:text-[#1e1b4b]"><Icon name="copy" className="w-4 h-4" /></button>
+                                            <input type="text" readOnly value={generatedLink} className="flex-1 bg-transparent outline-none text-[10px] text-left dir-ltr text-blue-600 font-bold" />
+                                            <button onClick={() => { navigator.clipboard.writeText(generatedLink); showToast('تم نسخ الرابط بنجاح!', 'success'); }} className="text-gray-500 hover:text-[#1e1b4b] shrink-0 p-1"><Icon name="copy" className="w-4 h-4" /></button>
                                         </div>
                                     </div>
                                 ) : (
@@ -1566,7 +1842,7 @@ function App() {
 
             {/* Mobile Overlay */}
             {isSidebarOpen && (
-                <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-black/50 z-[50] md:hidden animate-in fade-in" />
+                <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[50] md:hidden animate-fade-in" />
             )}
 
             <div className={`sidebar w-[260px] h-full flex flex-col z-[60] shadow-[4px_0_24px_rgba(0,0,0,0.05)] shrink-0 bg-[#ffffff] border-l border-gray-100 fixed md:relative right-0 top-0 bottom-0 transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
@@ -1600,6 +1876,10 @@ function App() {
                     <button onClick={() => { setActiveTab('archive'); setActiveSurveyForm(null); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-5 py-3.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'archive' ? 'bg-[#11032b] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-[#1e1b4b]'}`}><Icon name="archive" className="w-4 h-4" /> الأرشيف الشامل</button>
                     <div className="my-4 border-t border-gray-100"></div>
                     <button onClick={() => { setActiveTab('admin'); setActiveSurveyForm(null); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-5 py-3.5 rounded-xl font-bold text-sm transition-all ${activeTab === 'admin' ? 'bg-[#10b981] text-white shadow-md' : 'text-emerald-600 hover:bg-emerald-50'}`}><Icon name="settings" className="w-4 h-4" /> لوحة الإدارة</button>
+                    <div className="mt-6 pt-4 text-center border-t border-dashed border-gray-200 opacity-80">
+                        <p className="text-[10px] font-black text-gray-400">مشرف الجودة بجدة</p>
+                        <p className="text-xs font-black text-[#1e1b4b]">أ. ياسر محمد شعبان</p>
+                    </div>
                 </nav>
                 <div className="p-4 mt-auto mb-2 mx-4">
                     <button onClick={handleLogout} className="w-full py-2.5 bg-gray-50 text-gray-500 font-bold text-xs rounded-xl hover:bg-rose-50 hover:text-rose-600 transition-colors flex justify-center items-center gap-2">
@@ -1613,33 +1893,22 @@ function App() {
                 <div className="p-8 w-full bg-white print-only-header absolute top-0 left-0 z-50"><OfficialPrintHeader /></div>
 
                 <div className="relative flex-1 overflow-y-auto px-4 md:px-12 py-8 mt-print-adjust custom-scrollbar">
-                    <header className="flex flex-col md:flex-row justify-between items-center mb-8 no-print modern-card p-4 gap-4">
-                        <div className="flex items-center justify-between w-full md:w-auto gap-4 md:pl-4">
+                    <header className="flex flex-col md:flex-row justify-center items-center mb-8 no-print modern-card p-4 gap-4">
+                        <div className="flex items-center justify-between w-full md:justify-center gap-4">
                             <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-50 hover:bg-gray-100 rounded-xl text-[#1e1b4b] border border-gray-200 transition-colors">
                                 <Icon name="menu" className="w-6 h-6" />
                             </button>
                             <div className="flex items-center gap-4">
-                                <div className="text-left">
-                                    <p className="font-black text-[#1e1b4b] text-sm hidden sm:block">أ. ياسر محمد شعبان</p>
-                                    <p className="text-[10px] font-bold text-gray-400">مشرف الجودة بمدارس الفلاح</p>
+                                <div className="text-right">
+                                    <p className="font-black text-[#1e1b4b] text-sm hidden sm:block">أ. علي بن عبدالعالي علي السلماني</p>
+                                    <p className="text-[10px] font-bold text-gray-400">مدير عام الشؤون الإدارية والمالية ونظام إدارة الجودة</p>
                                 </div>
                                 <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-[#1e1b4b] shrink-0"><Icon name="user" className="w-5 h-5" /></div>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <button onClick={() => exportData('excel')} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-black hover:bg-emerald-100 transition-colors border border-emerald-100" title="تصدير إكسل">
-                                <Icon name="file-spreadsheet" className="w-4 h-4" /> تصدير إكسل
-                            </button>
-                            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-black hover:bg-indigo-100 transition-colors border border-indigo-100" title="طباعة التقرير">
-                                <Icon name="printer" className="w-4 h-4" /> طباعة A4
-                            </button>
-                        </div>
 
-                        <div className="flex items-center gap-3 bg-gray-50 p-1.5 rounded-xl border border-gray-100">
-                            <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} className="bg-white border border-gray-200 text-xs font-bold rounded-lg px-3 py-1.5 outline-none text-[#1e1b4b] focus:border-[#eab308]"><option>مكة المكرمة</option><option>جدة</option></select>
-                            <select value={selectedStage} onChange={e => setSelectedStage(e.target.value)} className="bg-white border border-gray-200 text-xs font-bold rounded-lg px-3 py-1.5 outline-none text-[#1e1b4b] focus:border-[#eab308]"><option>ابتدائية</option><option>متوسطة</option><option>ثانوية</option></select>
-                        </div>
+
                     </header>
 
                     <div className="print-adjust-content">
