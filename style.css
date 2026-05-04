@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap');
 
 @font-face {
     font-family: 'Al-Mohannad';
@@ -13,7 +13,7 @@
 }
 
 body {
-    font-family: 'Cairo', sans-serif;
+    font-family: 'Almarai', sans-serif;
     font-size: 15px;
     background-color: #f8fafc;
     margin: 0;
@@ -193,7 +193,7 @@ body {
 .modern-card {
     background: #ffffff;
     border-radius: 1.5rem;
-    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
     border: 1px solid #f1f5f9;
     transition: all 0.3s ease;
 }
