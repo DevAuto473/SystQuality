@@ -2,6 +2,10 @@ window.React = React;
 const { useState, useEffect, useMemo, useRef, useCallback } = React;
 const { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LabelList } = window.Recharts || {};
 
+const supabaseUrl = 'https://cksfwdhoxbrboxrefycz.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrc2Z3ZGhveGJyYm94cmVmeWN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4ODgyOTIsImV4cCI6MjA5MzQ2NDI5Mn0.tvIWdyz-Ngg3H0-3zGwffPbEKdWs2gp93V8SucY7Ons';
+const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
 // === Data Dictionary ===
 const DEFAULT_DICTIONARY = {
     'طلاب': {
@@ -152,34 +156,303 @@ const Icon = React.memo(({ name, className }) => {
     return <span ref={iconRef} style={{ display: 'contents' }} />;
 });
 
+// ===========================
+// Reusable 3D Push Button
+// ===========================
+const Button3D = ({ children, onClick, type = 'button', disabled = false, topColorClass, bottomColorClass, className = '' }) => {
+    const [isPressed, setIsPressed] = useState(false);
+
+    const handleClick = (e) => {
+        if (disabled || isPressed) return;
+        setIsPressed(true);
+        setTimeout(() => {
+            setIsPressed(false);
+            if (onClick) onClick(e);
+        }, 150);
+    };
+
+    const spanTransform = isPressed
+        ? '-translate-y-0.5'
+        : '-translate-y-1 [@media(hover:hover)]:hover:-translate-y-2';
+
+    return (
+        <button
+            type={type}
+            onClick={handleClick}
+            disabled={disabled}
+            className={`rounded-xl border-none p-0 cursor-pointer outline-none w-full sm:w-auto ${bottomColorClass} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
+        >
+            <span className={`block px-6 md:px-8 py-3 rounded-xl text-white font-black text-sm md:text-base flex items-center justify-center gap-2 transform transition-transform duration-150 ease-out ${topColorClass} ${spanTransform} ${disabled ? 'pointer-events-none' : ''}`}>
+                {children}
+            </span>
+        </button>
+    );
+};
+
+// ===========================
+// Unified Export Buttons
+// ===========================
+const ExportBtn = ({ onClick, icon, label, colorClass = 'text-gray-500 hover:bg-gray-100 hover:text-gray-700' }) => (
+    <div className="relative group">
+        <button
+            onClick={onClick}
+            className={`w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white transition-colors ${colorClass}`}
+        >
+            <Icon name={icon} className="w-3.5 h-3.5" />
+        </button>
+        <span className="pointer-events-none absolute z-[100] -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap bg-gray-800 text-white text-[10px] font-bold px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+            {label}
+        </span>
+    </div>
+);
+
+const ExportBtns = ({ onPNG, onPDF, onExcel }) => (
+    <div className="flex gap-1.5 export-buttons">
+        {onPNG   && <ExportBtn onClick={onPNG}   icon="image"            label="تحميل PNG" />}
+        {onPDF   && <ExportBtn onClick={onPDF}   icon="file-text"        label="تحميل PDF"  colorClass="text-rose-400 hover:bg-rose-50 hover:text-rose-600 border-rose-100" />}
+        {onExcel && <ExportBtn onClick={onExcel} icon="file-spreadsheet" label="تصدير إكسيل" colorClass="text-emerald-500 hover:bg-emerald-50 hover:text-emerald-700 border-emerald-100" />}
+    </div>
+);
+
+// ===========================
+// Preview / Confirm Modal (Advanced Live Version)
+// ===========================
+const PreviewModal = ({ config, onClose }) => {
+    const [isLoading, setIsLoading] = React.useState(false);
+    const [previewUrl, setPreviewUrl] = React.useState(null);
+    const [tableData, setTableData] = React.useState(null);
+
+    React.useEffect(() => {
+        if (!config?.isOpen) {
+            if (previewUrl && config?.type === 'PDF') URL.revokeObjectURL(previewUrl);
+            setPreviewUrl(null);
+            setTableData(null);
+            return;
+        }
+
+        const generatePreview = async () => {
+            setIsLoading(true);
+            try {
+                if (config.type === 'PNG') {
+                    const el = document.getElementById(config.elementId);
+                    if (!el) throw new Error("Element not found");
+                    const canvas = await html2canvas(el, { useCORS: true, scale: 2, backgroundColor: '#ffffff' });
+                    setPreviewUrl(canvas.toDataURL('image/png'));
+                } else if (config.type === 'PDF') {
+                    const el = document.getElementById(config.elementId);
+                    if (!el) throw new Error("Element not found");
+                    const canvas = await html2canvas(el, { useCORS: true, scale: 2 });
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new window.jspdf.jsPDF('l', 'mm', 'a4');
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                    pdf.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfHeight);
+                    const blob = pdf.output('blob');
+                    setPreviewUrl(URL.createObjectURL(blob));
+                } else if (config.type === 'Excel') {
+                    setTableData(config.data || []);
+                }
+            } catch (err) {
+                console.error("Preview generation failed:", err);
+            }
+            setIsLoading(false);
+        };
+
+        generatePreview();
+    }, [config]);
+
+    if (!config?.isOpen) return null;
+
+    const handleDownload = () => {
+        if (config.type === 'Excel') {
+            config.onConfirm();
+        } else {
+            const link = document.createElement('a');
+            link.href = previewUrl;
+            link.download = config.filename;
+            link.click();
+        }
+        onClose();
+    };
+
+    const icons = { PNG: 'image', PDF: 'file-text', Excel: 'file-spreadsheet' };
+    const colors = { PNG: 'bg-indigo-600', PDF: 'bg-rose-600', Excel: 'bg-emerald-600' };
+
+    return (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center backdrop-blur-md bg-black/50 p-4" onClick={onClose}>
+            <div className="bg-white rounded-[2.5rem] shadow-2xl border border-gray-100 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                
+                {/* Header */}
+                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <div className="flex items-center gap-4">
+                        <div className={`w-12 h-12 flex items-center justify-center rounded-2xl shadow-sm ${colors[config.type] || 'bg-gray-700'}`}>
+                            <Icon name={icons[config.type] || 'download'} className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                            <h3 className="font-black text-[#1e1b4b] text-lg">استعراض ملف {config.type}</h3>
+                            <p className="text-[11px] text-gray-400 font-bold">{config.filename}</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-200 transition-colors">
+                        <Icon name="x" className="w-6 h-6 text-gray-400" />
+                    </button>
+                </div>
+
+                {/* Content Area */}
+                <div className="flex-1 overflow-y-auto p-8 bg-gray-50/30 custom-scrollbar relative min-h-[400px]">
+                    {isLoading ? (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+                            <Icon name="loader" className="w-12 h-12 text-indigo-600 animate-spin" />
+                            <p className="text-sm font-black text-gray-500 animate-pulse">جاري تجهيز الاستعراض الحي...</p>
+                        </div>
+                    ) : (
+                        <div className="animate-in fade-in duration-500">
+                            {config.type === 'PNG' && previewUrl && (
+                                <img src={previewUrl} className="w-full h-auto shadow-md rounded-2xl border border-gray-200" alt="Preview" />
+                            )}
+                            {config.type === 'PDF' && previewUrl && (
+                                <iframe src={previewUrl} className="w-full h-[65vh] border border-gray-200 rounded-2xl shadow-md" title="PDF Preview" />
+                            )}
+                            {config.type === 'Excel' && tableData && (
+                                <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-md">
+                                    <table className="w-full text-right text-xs border-collapse bg-white">
+                                        <thead>
+                                            <tr className="bg-[#1e1b4b] text-white">
+                                                {tableData.length > 0 && Object.keys(tableData[0]).map(key => (
+                                                    <th key={key} className="p-4 font-black whitespace-nowrap border-b border-indigo-900">{key}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {tableData.map((row, idx) => (
+                                                <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                    {Object.values(row).map((val, vIdx) => (
+                                                        <td key={vIdx} className="p-4 font-bold text-gray-600 border-b border-gray-100">{val}</td>
+                                                    ))}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer Buttons */}
+                <div className="p-6 border-t border-gray-100 bg-white flex justify-end gap-3">
+                    <button onClick={onClose} className="px-8 py-3 rounded-2xl text-sm font-black text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all">إلغاء</button>
+                    <button 
+                        disabled={isLoading || (!previewUrl && config.type !== 'Excel')}
+                        onClick={handleDownload} 
+                        className={`px-10 py-3 rounded-2xl text-sm font-black text-white shadow-lg transition-all flex items-center gap-2 ${
+                            isLoading ? 'bg-gray-400 cursor-not-allowed' : 
+                            (colors[config.type] || 'bg-gray-700') + ' hover:opacity-90'
+                        }`}
+                    >
+                        <Icon name="download" className="w-4 h-4" /> تأكيد وتحميل الملف
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 function App() {
     // === State ===
     const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('falah_auth') === 'true');
     const [loginCreds, setLoginCreds] = useState({ username: '', password: '' });
     const [loginError, setLoginError] = useState(false);
+    const [previewConfig, setPreviewConfig] = useState(null); // { isOpen, type, filename, onConfirm }
 
     const [activeTab, setActiveTab] = useState('home');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [activeSurveyForm, setActiveSurveyForm] = useState(null);
     const [adminSubTab, setAdminSubTab] = useState('timing'); // Default admin tab focused on control
 
-    const [dict, setDict] = useState(() => JSON.parse(localStorage.getItem('falah_v10_dict')) || DEFAULT_DICTIONARY);
-    const [surveys, setSurveys] = useState(() => JSON.parse(localStorage.getItem('falah_v10_surveys')) || INIT_SURVEYS);
-    const [assessments, setAssessments] = useState(() => {
-        const data = JSON.parse(localStorage.getItem('falah_v10_data')) || {};
-        const migrated = {};
-        for (let k in data) {
-            if (Array.isArray(data[k])) migrated[k] = data[k];
-            else if (typeof data[k] === 'object' && Object.keys(data[k]).length > 0) migrated[k] = [{ timestamp: new Date().toISOString(), answers: data[k] }];
-            else migrated[k] = [];
-        }
-        return migrated;
-    });
+    const [dict, setDict] = useState(DEFAULT_DICTIONARY);
+    const [surveys, setSurveys] = useState(INIT_SURVEYS);
+    const [assessments, setAssessments] = useState({});
+
+    const [isGlobalLoading, setIsGlobalLoading] = useState(true);
+    const isRemoteUpdate = useRef(false);
+
+    useEffect(() => {
+        // Supabase Auth Listener
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (!sessionStorage.getItem('falah_auth')) setIsAuthenticated(!!session);
+        });
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (!sessionStorage.getItem('falah_auth')) setIsAuthenticated(!!session);
+        });
+
+        // Fetch Survey Responses & Global App Config
+        const fetchGlobalData = async () => {
+            setIsGlobalLoading(true);
+            const [configRes, responsesRes] = await Promise.all([
+                supabase.from('app_config').select('*').eq('id', 'global').maybeSingle(),
+                supabase.from('survey_responses').select('survey_key, answers, created_at').order('created_at', { ascending: true })
+            ]);
+
+            isRemoteUpdate.current = true;
+            if (configRes.data) {
+                if (configRes.data.dict_data) setDict(configRes.data.dict_data);
+                if (configRes.data.surveys_data) setSurveys(configRes.data.surveys_data);
+                if (configRes.data.layout_data) setLayoutPrefs(configRes.data.layout_data);
+                if (configRes.data.logos_data) setLogos(configRes.data.logos_data);
+            }
+
+            if (responsesRes.data && responsesRes.data.length > 0) {
+                const grouped = {};
+                responsesRes.data.forEach(row => {
+                    const k = row.survey_key;
+                    if (!grouped[k]) grouped[k] = [];
+                    // Each row.answers is already the full submission object {timestamp, answers}
+                    grouped[k].push(row.answers);
+                });
+                setAssessments(grouped);
+            }
+            setIsGlobalLoading(false);
+        };
+        fetchGlobalData();
+
+        // Real-time Subscriptions
+        const configSub = supabase.channel('config-channel')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'app_config', filter: "id=eq.global" }, (payload) => {
+                if (payload.new) {
+                    isRemoteUpdate.current = true;
+                    if (payload.new.dict_data) setDict(payload.new.dict_data);
+                    if (payload.new.surveys_data) setSurveys(payload.new.surveys_data);
+                    if (payload.new.layout_data) setLayoutPrefs(payload.new.layout_data);
+                    if (payload.new.logos_data) setLogos(payload.new.logos_data);
+                }
+            })
+            .subscribe();
+
+        const responsesSub = supabase.channel('responses-channel')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'survey_responses' }, (payload) => {
+                const row = payload.new;
+                if (!row || !row.survey_key || !row.answers) return;
+                setAssessments(prev => {
+                    const next = { ...prev };
+                    next[row.survey_key] = [...(next[row.survey_key] || []), row.answers];
+                    return next;
+                });
+            })
+            .subscribe();
+
+        return () => {
+            subscription.unsubscribe();
+            supabase.removeChannel(configSub);
+            supabase.removeChannel(responsesSub);
+        };
+    }, []);
     const [currentSubmissions, setCurrentSubmissions] = useState({});
-    const [logos, setLogos] = useState(() => JSON.parse(localStorage.getItem('falah_v10_logos')) || DEFAULT_LOGOS);
+    const [logos, setLogos] = useState(DEFAULT_LOGOS);
 
     // Layout & Print Settings with Customization Fields
-    const [layoutPrefs, setLayoutPrefs] = useState(() => JSON.parse(localStorage.getItem('falah_v10_layout')) || {
+    const [layoutPrefs, setLayoutPrefs] = useState({
         showHeader: true, showCharts: true, showSWOT: true, showTables: true, showGlobal: true,
         reportTitle: "تقرير التميز المؤسسي الموحد (Global QMS)",
         preparedByText: "مُعد التقرير",
@@ -195,9 +468,10 @@ function App() {
     const [selectedLocation, setSelectedLocation] = useState('مكة المكرمة');
     const [selectedStage, setSelectedStage] = useState('ابتدائية');
     const [dashboardTarget, setDashboardTarget] = useState('إداريين');
+    const [swotThresholds, setSwotThresholds] = useState({ strength: 80, weakness: 60 });
     const [compareScope, setCompareScope] = useState('all');
     const [compareViewMode, setCompareViewMode] = useState('domains');
-    
+
     const [archiveFilterLoc, setArchiveFilterLoc] = useState('');
     const [archiveFilterStg, setArchiveFilterStg] = useState('');
     const [archiveFilterTrg, setArchiveFilterTrg] = useState('');
@@ -285,7 +559,10 @@ function App() {
         }
 
         const surveyData = dict[s.target];
-        const key = `${s.location || 'مكة المكرمة'}-${s.stage || 'ابتدائية'}-${s.target}`;
+        // Use location & stage from URL params so submissions land in the correct bucket
+        const effectiveLoc = publicViewState.location || s.location || 'مكة المكرمة';
+        const effectiveStg = publicViewState.stage  || s.stage  || 'ابتدائية';
+        const key = `${effectiveLoc}-${effectiveStg}-${s.target}`;
 
         const handlePublicSubmit = async () => {
             const currentAnswers = currentSubmissions[key] || {};
@@ -300,47 +577,37 @@ function App() {
                 return;
             }
 
-            try {
-                const newSubmission = {
-                    timestamp: new Date().toISOString(),
-                    answers: currentAnswers
-                };
+            const submissionPayload = {
+                timestamp: new Date().toISOString(),
+                answers: currentAnswers
+            };
 
-                // قراءة البيانات الحالية من التخزين المحلي مباشرة
-                const storedData = JSON.parse(localStorage.getItem('falah_v10_data')) || {};
-                const targetArray = storedData[key] || [];
-                
-                // إضافة المشاركة الجديدة
-                targetArray.push(newSubmission);
-                storedData[key] = targetArray;
+            console.log('[QMS] Submitting to Supabase:', { survey_key: key, answers: submissionPayload });
 
-                // الحفظ الفوري المتزامن لضمان عدم ضياع البيانات (Zero Data Loss)
-                localStorage.setItem('falah_v10_data', JSON.stringify(storedData));
+            const { error: insertError } = await supabase
+                .from('survey_responses')
+                .insert({ survey_key: key, answers: submissionPayload });
 
-                // تحديث حالة التطبيق المحلية (Assessments State) لتحديث الواجهة والنتائج
-                setAssessments(prev => ({
-                    ...prev,
-                    [key]: [...(prev[key] || []), newSubmission]
-                }));
-
-                await new Promise(resolve => setTimeout(resolve, 800)); // محاكاة التحميل
-
-                // مسح الإجابات المؤقتة
-                setCurrentSubmissions(prev => {
-                    const next = { ...prev }; delete next[key]; return next;
-                });
-
-                // تفعيل نظام منع التكرار (Cooldown)
-                const newCooldowns = { ...cooldowns, [s.id]: new Date().toISOString() };
-                localStorage.setItem('falah_v10_cooldowns', JSON.stringify(newCooldowns));
-
-                // الانتقال لشاشة النجاح
-                setPublicViewState(prev => ({ ...prev, submitted: true }));
-                window.scrollTo(0, 0);
-            } catch (error) {
-                console.error("حدث خطأ أثناء حفظ التقييم:", error);
-                alert("تعذر إرسال التقييم، يرجى المحاولة مرة أخرى.");
+            if (insertError) {
+                console.error('[QMS] INSERT FAILED — code:', insertError.code, '| message:', insertError.message, '| details:', insertError.details, '| hint:', insertError.hint);
+                alert(`تعذّر إرسال التقييم.\nالسبب: ${insertError.message}\n\nيرجى التواصل مع إدارة النظام.`);
+                return; // MUST NOT proceed to success screen
             }
+
+            console.log('[QMS] INSERT SUCCESS ✓');
+
+            // Clear in-progress answers
+            setCurrentSubmissions(prev => {
+                const next = { ...prev }; delete next[key]; return next;
+            });
+
+            // Cooldown: browser-level spam prevention only
+            const newCooldowns = { ...cooldowns, [s.id]: new Date().toISOString() };
+            localStorage.setItem('falah_v10_cooldowns', JSON.stringify(newCooldowns));
+
+            // Show success screen
+            setPublicViewState(prev => ({ ...prev, submitted: true }));
+            window.scrollTo(0, 0);
         };
 
         const scrollToQuestion = (id) => {
@@ -383,14 +650,19 @@ function App() {
                     </div>
 
                     <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
-                        <button onClick={handlePublicSubmit} className="px-10 py-4 bg-[#10b981] text-white font-black text-lg rounded-xl hover:bg-[#059669] transition-all shadow-lg flex items-center justify-center gap-2 mx-auto w-full md:w-auto">
-                            <Icon name="check-circle" className="w-6 h-6" /> اعتماد وإرسال التقييم
-                        </button>
+                        <Button3D
+                            onClick={handlePublicSubmit}
+                            topColorClass="bg-[#10b981]"
+                            bottomColorClass="bg-emerald-700"
+                            className="mx-auto"
+                        >
+                            <Icon name="check-circle" className="w-5 h-5" /> اعتماد وإرسال التقييم
+                        </Button3D>
                     </div>
 
                     {missingQuestions.length > 0 && (
                         <div className="fixed inset-0 z-[110] flex items-center justify-center backdrop-blur-md bg-black/40 p-4">
-                            <div className="bg-white p-8 rounded-[2rem] shadow-2xl max-w-md w-full animate-in zoom-in">
+                            <div className="bg-white p-8 rounded-[2rem] shadow-md max-w-md w-full animate-in zoom-in">
                                 <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <Icon name="alert-circle" className="w-8 h-8 text-rose-600" />
                                 </div>
@@ -417,18 +689,26 @@ function App() {
         );
     }
 
-    // دالة قوية لتحديث الأيقونات
-
-    // Sync to LocalStorage & Refresh Icons
+    // Sync Global Data to Supabase
     useEffect(() => {
-        if (isAuthenticated) {
-            localStorage.setItem('falah_v10_dict', JSON.stringify(dict));
-            localStorage.setItem('falah_v10_surveys', JSON.stringify(surveys));
-            localStorage.setItem('falah_v10_data', JSON.stringify(assessments));
-            localStorage.setItem('falah_v10_logos', JSON.stringify(logos));
-            localStorage.setItem('falah_v10_layout', JSON.stringify(layoutPrefs));
+        if (!isAuthenticated || isGlobalLoading) return;
+        if (isRemoteUpdate.current) {
+            isRemoteUpdate.current = false;
+            return;
         }
-    }, [isAuthenticated, dict, surveys, assessments, logos, layoutPrefs, activeTab, adminSubTab, compareScope, compareViewMode, activeSurveyForm]);
+
+        const timer = setTimeout(() => {
+            supabase.from('app_config').upsert({
+                id: 'global',
+                dict_data: dict,
+                surveys_data: surveys,
+                layout_data: layoutPrefs,
+                logos_data: logos
+            }).then();
+        }, 1500);
+
+        return () => clearTimeout(timer);
+    }, [isAuthenticated, isGlobalLoading, dict, surveys, layoutPrefs, logos]);
 
     // Live Countdown Timer & Auto-Close
     const [surveyTimers, setSurveyTimers] = useState({});
@@ -481,20 +761,32 @@ function App() {
     }, [surveys]);
 
     // --- Handlers ---
-    const handleLogin = (e) => {
+    const handleLogin = async (e) => {
         e.preventDefault();
-        if (loginCreds.username === 'admin' && loginCreds.password === '1234') {
+        
+        // حساب الإدارة الثابت
+        if (loginCreds.username === 'host@alfalah.com' && loginCreds.password === '1234') {
             setIsAuthenticated(true);
             sessionStorage.setItem('falah_auth', 'true');
             setLoginError(false);
-        } else {
+            return;
+        }
+
+        const { error } = await supabase.auth.signInWithPassword({
+            email: loginCreds.username,
+            password: loginCreds.password
+        });
+        if (error) {
             setLoginError(true);
+        } else {
+            setLoginError(false);
         }
     };
 
-    const handleLogout = () => {
-        setIsAuthenticated(false);
+    const handleLogout = async () => {
         sessionStorage.removeItem('falah_auth');
+        setIsAuthenticated(false);
+        await supabase.auth.signOut();
     };
 
     const startEditingCategory = (category) => {
@@ -709,7 +1001,7 @@ function App() {
         const key = `${selectedLocation}-${selectedStage}-${dashboardTarget}`;
         const list = assessments[key] || [];
         const currentDict = dict[dashboardTarget];
-        if (!currentDict) return { avgScore: 0, avgPercent: 0, domainData: [], total: 0, swot: { strengths: [], weaknesses: [] }, hasData: false };
+        if (!currentDict) return { avgScore: 0, avgPercent: 0, domainData: [], total: 0, swot: { strengths: [], opportunities: [], weaknesses: [] }, hasData: false };
 
         let allScores = [];
         let questionScores = {};
@@ -737,15 +1029,54 @@ function App() {
             return { name: d.name, percentage: Math.round((dAvg / 5) * 100) };
         });
 
+        // Helper: auto recommendation per domain
+        const getRecommendation = (domainId, type) => {
+            const recs = {
+                d1: type === 'opportunity'
+                    ? 'يُنصح بمراجعة موارد هذا المجال وتطوير خطة تحسين مدروسة.'
+                    : 'يتطلب تدخلاً عاجلاً وتخصيص ميزانية للمعالجة الفورية.',
+                d2: type === 'opportunity'
+                    ? 'ينصح بتفعيل برامج التدريب وتبني مبادرات لتحسين هذا المحور.'
+                    : 'هذا المجال حرج ويستوجب تحليل الأسباب الجذرية وخطة إصلاح مدروسة.',
+                d3: type === 'opportunity'
+                    ? 'مراجعة السياسات واللوائح المتعلقة وتعزيز التواصل في هذا الجانب.'
+                    : 'يتطلب مراجعة فورية للموارد المخصصة وتحليل الأسباب الجذرية لهذا المجال.',
+            };
+            return recs[domainId] || 'يتطلب مراجعة شاملة وخطة تحسين واضحة لهذا المعيار.';
+        };
+
+        // Build enriched question list
+        const enriched = currentDict.questions
+            .filter(q => questionScores[q.id]?.count > 0)
+            .map(q => {
+                const avgQ = questionScores[q.id].total / questionScores[q.id].count;
+                const pct = Math.round((avgQ / 5) * 100);
+                const domain = currentDict.domains.find(d => d.id === q.domainId);
+                return {
+                    ...q,
+                    percentage: pct,
+                    avgScore: avgQ.toFixed(2),
+                    domainName: domain?.name || '',
+                    domainColor: domain?.color || '#94a3b8',
+                };
+            });
+
         const swot = {
-            strengths: currentDict.questions.filter(q => questionScores[q.id]?.count > 0 && (questionScores[q.id].total / questionScores[q.id].count) >= 4)
-                .map(q => ({ ...q, percentage: Math.round(((questionScores[q.id].total / questionScores[q.id].count) / 5) * 100) })),
-            weaknesses: currentDict.questions.filter(q => questionScores[q.id]?.count > 0 && (questionScores[q.id].total / questionScores[q.id].count) < 3)
-                .map(q => ({ ...q, percentage: Math.round(((questionScores[q.id].total / questionScores[q.id].count) / 5) * 100) }))
+            strengths: enriched
+                .filter(q => q.percentage >= swotThresholds.strength)
+                .sort((a, b) => b.percentage - a.percentage),
+            opportunities: enriched
+                .filter(q => q.percentage >= swotThresholds.weakness && q.percentage < swotThresholds.strength)
+                .sort((a, b) => a.percentage - b.percentage)
+                .map(q => ({ ...q, recommendation: getRecommendation(q.domainId, 'opportunity') })),
+            weaknesses: enriched
+                .filter(q => q.percentage < swotThresholds.weakness)
+                .sort((a, b) => a.percentage - b.percentage)
+                .map(q => ({ ...q, recommendation: getRecommendation(q.domainId, 'weakness') })),
         };
 
         return { avgScore: avgScore.toFixed(2), avgPercent, domainData, total: list.length, swot, hasData: list.length > 0 };
-    }, [assessments, selectedLocation, selectedStage, dashboardTarget, dict]);
+    }, [assessments, selectedLocation, selectedStage, dashboardTarget, dict, swotThresholds]);
 
     const realCompareCities = useMemo(() => {
         const targetToUse = ['معلمين', 'إداريين'].includes(compareScope) ? compareScope : dashboardTarget;
@@ -794,7 +1125,7 @@ function App() {
         let records = [];
         ['مكة المكرمة', 'جدة'].forEach(loc => {
             ['ابتدائية', 'متوسطة', 'ثانوية'].forEach(stg => {
-                ['طلاب', 'معلمين', 'أولياء أمور', 'إداريين'].forEach(trg => {
+                ['طلاب', 'معلمين', 'إداريين'].forEach(trg => {
                     const key = `${loc}-${stg}-${trg}`;
                     const list = assessments[key] || [];
                     if (list.length > 0) {
@@ -860,7 +1191,7 @@ function App() {
     if (!isAuthenticated) {
         return (
             <div className="flex h-screen w-full login-bg items-center justify-center px-4" dir="rtl">
-                <div className="bg-white/95 backdrop-blur-xl p-10 rounded-3xl shadow-2xl max-w-sm w-full border border-white/20 animate-in zoom-in-95 duration-500">
+                <div className="bg-white/95 backdrop-blur-xl p-10 rounded-3xl shadow-md max-w-sm w-full border border-white/20 animate-in zoom-in-95 duration-500">
                     <div className="w-20 h-20 bg-[#eab308] rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-lg transform rotate-3">
                         <Icon name="shield-check" className="w-10 h-10 text-[#1e1b4b]" />
                     </div>
@@ -887,9 +1218,14 @@ function App() {
                                 <input type="password" value={loginCreds.password} onChange={e => setLoginCreds({ ...loginCreds, password: e.target.value })} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 pr-10 text-sm font-bold focus:ring-2 focus:ring-[#1e1b4b] outline-none transition-all" placeholder="أدخل كلمة المرور" required />
                             </div>
                         </div>
-                        <button type="submit" className="w-full py-3 bg-[#1e1b4b] text-[#eab308] rounded-xl font-black text-sm hover:bg-blue-900 hover:shadow-lg transition-all flex items-center justify-center gap-2 mt-2">
+                        <Button3D
+                            type="submit"
+                            topColorClass="bg-[#1e1b4b] text-[#eab308]"
+                            bottomColorClass="bg-indigo-950"
+                            className="mt-2"
+                        >
                             تسجيل الدخول <Icon name="arrow-left" className="w-4 h-4" />
-                        </button>
+                        </Button3D>
                     </form>
                     <p className="text-center text-[10px] text-gray-400 font-bold mt-6">للدعم الفني: أ. ياسر محمد شعبان (0509677841)</p>
                 </div>
@@ -900,7 +1236,7 @@ function App() {
     // --- Views ---
     const renderHome = () => (
         <div className="space-y-8 animate-in fade-in duration-700 print-area">
-            <div className="relative w-full h-auto rounded-[2rem] overflow-hidden shadow-2xl border border-gray-100 bg-white">
+            <div className="relative w-full h-auto rounded-[2rem] overflow-hidden shadow-md border border-gray-100 bg-white">
                 {/* الشعار المائي خلف المحتوى */}
                 <img
                     src="https://www.alfalah.edu.sa/assets/images/logo.png"
@@ -913,24 +1249,24 @@ function App() {
                     <h2 className="text-3xl md:text-5xl font-black text-[#1e1b4b] mb-4 leading-tight">نظام إدارة الجودة</h2>
                     <p className="text-base md:text-xl text-[#1e1b4b] font-semibold max-w-2xl leading-relaxed mx-auto">المنصة الرسمية لمدارس الفلاح لرصد وتحليل وتقويم استبانات رضا المستفيد ومواءمتها مع متطلبات الأيزو 9001-2015 بشكل رقمي ذكي.</p>
                     <div className="mt-8 flex flex-wrap justify-center gap-4 no-print w-full">
-                        <button onClick={() => setActiveTab('surveys')} className="px-6 md:px-8 py-3 bg-[#eab308] text-[#1e1b4b] font-black rounded-xl hover:scale-105 flex items-center gap-2 shadow-lg transition-transform w-full sm:w-auto justify-center"><Icon name="play" className="w-5 h-5" /> بدء التقييم</button>
+                        <button onClick={() => setActiveTab('surveys')} className="px-6 md:px-8 py-3 bg-[#eab308] text-[#1e1b4b] font-black rounded-xl flex items-center gap-2 shadow-lg transition-transform w-full sm:w-auto justify-center"><Icon name="play" className="w-5 h-5" /> بدء التقييم</button>
                         <button onClick={() => setActiveTab('dashboard')} className="px-6 md:px-8 py-3 bg-white text-[#1e1b4b] border border-gray-200 font-black rounded-xl hover:bg-gray-50 hover:shadow-md flex items-center gap-2 transition-all shadow-sm w-full sm:w-auto justify-center"><Icon name="pie-chart" className="w-5 h-5" /> عرض النتائج</button>
                     </div>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 no-print">
-                <div className="modern-card p-8 flex flex-col items-center text-center border-t-4 border-[#1e1b4b] hover:-translate-y-1">
+                <div className="modern-card p-8 flex flex-col items-center text-center border-t-4 border-[#1e1b4b]">
                     <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mb-5"><Icon name="eye" className="w-7 h-7 text-[#1e1b4b]" /></div>
                     <h3 className="text-xl font-black text-[#1e1b4b] mb-3">رؤيتنا</h3>
                     <p className="text-gray-500 font-semibold text-sm">متعلمون متميزون بالقيم الإسلامية والوطنية ومعايير التفوق العالمية.</p>
                 </div>
-                <div className="modern-card p-8 flex flex-col items-center text-center border-t-4 border-[#eab308] hover:-translate-y-1">
+                <div className="modern-card p-8 flex flex-col items-center text-center border-t-4 border-[#eab308]">
                     <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center mb-5"><Icon name="book-open" className="w-7 h-7 text-[#eab308]" /></div>
                     <h3 className="text-xl font-black text-[#1e1b4b] mb-3">الرسالة</h3>
                     <p className="text-gray-500 font-semibold text-sm">تهيئةُ طلابنا للفلاح في دينهم وخُلُقهم والتفوق في مستقبلهم العلمي والمهني.</p>
                 </div>
-                <div className="modern-card p-8 flex flex-col items-center text-center border-t-4 border-[#10b981] hover:-translate-y-1">
+                <div className="modern-card p-8 flex flex-col items-center text-center border-t-4 border-[#10b981]">
                     <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center mb-5"><Icon name="star" className="w-7 h-7 text-emerald-600" /></div>
                     <h3 className="text-xl font-black text-[#1e1b4b] mb-3">شعارنا</h3>
                     <p className="text-emerald-600 font-black text-lg mt-2">"نتعلم لنكون لرواد الغد"</p>
@@ -1022,7 +1358,7 @@ function App() {
 
                     {missingQuestions.length > 0 && (
                         <div className="fixed inset-0 z-[110] flex items-center justify-center backdrop-blur-md bg-black/40">
-                            <div className="bg-white p-8 rounded-[2rem] shadow-2xl max-w-md w-full m-4 animate-in zoom-in">
+                            <div className="bg-white p-8 rounded-[2rem] shadow-md max-w-md w-full m-4 animate-in zoom-in">
                                 <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <Icon name="alert-circle" className="w-8 h-8 text-rose-600" />
                                 </div>
@@ -1132,7 +1468,7 @@ function App() {
 
             return (
                 <div className="fixed inset-0 z-[90] bg-gray-50 overflow-y-auto w-full h-full animate-in zoom-in-95 duration-300" dir="rtl">
-                    <div className="sticky top-0 bg-[#11032b] text-white p-4 shadow-xl z-10 flex justify-between items-center border-b border-indigo-900">
+                    <div className="sticky top-0 bg-[#11032b] text-white p-4 shadow-md z-10 flex justify-between items-center border-b border-indigo-900">
                         <div className="flex items-center gap-4">
                             <button onClick={closeSurveyBuilder} className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors"><Icon name="arrow-right" className="w-5 h-5" /></button>
                             <div>
@@ -1171,36 +1507,35 @@ function App() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="text-xs font-black text-gray-500 block mb-2">الفئة المستهدفة (Key)</label>
+                                    <label className="text-xs font-black text-gray-500 block mb-2">الفئة المراد تقييمها (Key)</label>
                                     <select value={target} onChange={e => updateField('target', e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-[#1e1b4b] focus:ring-1 focus:ring-[#1e1b4b] transition-all">
                                         <option value="" disabled>-- اختر الفئة --</option>
                                         <option value="إداريين">إداريين</option>
                                         <option value="معلمين">معلمين</option>
                                         <option value="طلاب">طلاب</option>
-                                        <option value="أولياء أمور">أولياء أمور</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label className="text-xs font-black text-gray-500 block mb-2">الأيقونة (Lucide)</label>
                                     <div className="relative">
                                         <select value={icon} onChange={e => updateField('icon', e.target.value)} className="w-full p-3 pr-10 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold outline-none focus:border-[#1e1b4b] focus:ring-1 focus:ring-[#1e1b4b] transition-all cursor-pointer appearance-none">
-                                            <option value="users">المستخدمين (users)</option>
-                                            <option value="book-open">كتاب (book-open)</option>
-                                            <option value="home">الرئيسية (home)</option>
-                                            <option value="award">جائزة (award)</option>
-                                            <option value="file-text">مستند (file-text)</option>
-                                            <option value="star">نجمة (star)</option>
-                                            <option value="shield">درع (shield)</option>
-                                            <option value="briefcase">حقيبة (briefcase)</option>
-                                            <option value="target">هدف (target)</option>
-                                            <option value="activity">نشاط (activity)</option>
-                                            <option value="clipboard">حافظة (clipboard)</option>
-                                            <option value="pie-chart">رسم بياني (pie-chart)</option>
-                                            <option value="check-circle">صح (check-circle)</option>
-                                            <option value="smile">وجه مبتسم (smile)</option>
-                                            <option value="monitor">شاشة (monitor)</option>
-                                            <option value="globe">شبكة (globe)</option>
-                                            <option value="settings">إعدادات (settings)</option>
+                                            <option value="users">مستخدمين </option>
+                                            <option value="book-open">كتاب </option>
+                                            <option value="home">الرئيسية</option>
+                                            <option value="award">جائزة</option>
+                                            <option value="file-text">مستند </option>
+                                            <option value="star">نجمة </option>
+                                            <option value="shield">درع </option>
+                                            <option value="briefcase">حقيبة </option>
+                                            <option value="target">هدف </option>
+                                            <option value="activity">نشاط </option>
+                                            <option value="clipboard">حافظة </option>
+                                            <option value="pie-chart">رسم بياني </option>
+                                            <option value="check-circle">صح </option>
+                                            <option value="smile">وجه مبتسم </option>
+                                            <option value="monitor">شاشة </option>
+                                            <option value="globe">شبكة </option>
+                                            <option value="settings">إعدادات </option>
                                         </select>
                                         <Icon name={icon || 'help-circle'} className="absolute right-3 top-3.5 w-4 h-4 text-gray-400" />
                                     </div>
@@ -1308,7 +1643,7 @@ function App() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
                     {surveys.map(s => (
-                        <div key={s.id} className={`modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-8 flex flex-col group transition-all duration-300 ${s.status === 'نشط' ? 'hover:shadow-xl hover:-translate-y-1 hover:border-gray-200' : 'opacity-75'} ${isSurveyEditMode ? 'border-2 border-indigo-100 shadow-md ring-4 ring-indigo-50/50' : ''}`}>
+                        <div key={s.id} className={`modern-card transition-all duration-300 motion-safe:hover:shadow-md p-8 flex flex-col group transition-all duration-300 ${s.status === 'نشط' ? 'hover:shadow-md hover:border-gray-200' : 'opacity-75'} ${isSurveyEditMode ? 'border-2 border-indigo-100 shadow-md ring-4 ring-indigo-50/50' : ''}`}>
                             <div className="flex justify-between items-start mb-6">
                                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors shadow-inner ${isSurveyEditMode ? 'bg-[#1e1b4b] text-white' : 'bg-indigo-50 group-hover:bg-[#eab308] text-[#1e1b4b]'}`}>
                                     <Icon name={s.icon} className="w-6 h-6" />
@@ -1325,9 +1660,20 @@ function App() {
                             )}
 
                             {!isSurveyEditMode ? (
-                                <button onClick={() => setActiveSurveyForm(s.id)} disabled={s.status !== 'نشط'} className={`mt-auto w-full py-3.5 rounded-xl font-black flex justify-center items-center gap-2 transition-colors shadow-sm ${s.status === 'نشط' ? 'bg-[#11032b] text-white hover:bg-[#eab308] hover:text-[#11032b]' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
-                                    {s.status === 'نشط' ? 'التقييم الداخلي' : 'الاستبانة مغلقة'} <Icon name="arrow-left" className="w-4 h-4" />
-                                </button>
+                                s.status === 'نشط' ? (
+                                    <Button3D
+                                        onClick={() => setActiveSurveyForm(s.id)}
+                                        topColorClass="bg-[#11032b]"
+                                        bottomColorClass="bg-indigo-950"
+                                        className="mt-auto"
+                                    >
+                                        التقييم الداخلي <Icon name="arrow-left" className="w-4 h-4" />
+                                    </Button3D>
+                                ) : (
+                                    <button disabled className="mt-auto w-full py-3.5 rounded-xl font-black flex justify-center items-center gap-2 bg-gray-100 text-gray-400 cursor-not-allowed">
+                                        الاستبانة مغلقة <Icon name="arrow-left" className="w-4 h-4" />
+                                    </button>
+                                )
                             ) : (
                                 <div className="mt-auto grid grid-cols-3 gap-2 animate-in fade-in zoom-in-95 duration-300">
                                     <button onClick={() => openSurveyBuilder(s)} className="py-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl font-black text-xs flex flex-col items-center gap-1.5 transition-all shadow-sm">
@@ -1350,7 +1696,7 @@ function App() {
 
     const renderDashboard = () => (
         <div className="space-y-6 animate-in slide-in-from-right-8 duration-500 pb-20 print-area">
-            <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-5 flex flex-col md:flex-row gap-4 items-center no-print">
+            <div className="modern-card transition-all duration-300 motion-safe:hover:shadow-md p-5 flex flex-col md:flex-row gap-4 items-center no-print">
                 <div className="flex items-center gap-2 text-gray-500 font-black text-sm whitespace-nowrap"><Icon name="filter" className="w-4 h-4" /> الفلترة:</div>
                 <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} className="flex-1 p-2.5 bg-gray-50 border border-gray-200 text-[#1e1b4b] rounded-xl font-bold outline-none focus:border-[#eab308]">
                     <option value="مكة المكرمة">مكة المكرمة</option>
@@ -1363,7 +1709,7 @@ function App() {
                 </select>
                 <select value={dashboardTarget} onChange={e => setDashboardTarget(e.target.value)} className="flex-1 p-2.5 bg-gray-50 border border-gray-200 text-[#1e1b4b] rounded-xl font-bold outline-none focus:border-[#eab308]">
                     <option value="إداريين">نتائج الإداريين</option><option value="طلاب">نتائج الطلاب</option>
-                    <option value="معلمين">نتائج المعلمين</option><option value="أولياء أمور">نتائج أولياء الأمور</option>
+                    <option value="معلمين">نتائج المعلمين</option>
                 </select>
             </div>
 
@@ -1373,7 +1719,7 @@ function App() {
             </div>
 
             {!dashboardStats.hasData ? (
-                <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-16 flex flex-col items-center text-center">
+                <div className="modern-card transition-all duration-300 motion-safe:hover:shadow-md p-16 flex flex-col items-center text-center">
                     <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-4"><Icon name="bar-chart-2" className="w-8 h-8 text-gray-300" /></div>
                     <h3 className="text-xl font-black text-[#1e1b4b] mb-2">لا توجد بيانات مسجلة حالياً</h3>
                     <p className="text-sm text-gray-500 font-semibold">قم بإجراء تقييم لهذه الفئة لتظهر النتائج هنا.</p>
@@ -1383,21 +1729,21 @@ function App() {
                     <div id="overall-stats-container" className="relative mb-6">
                         <div className="flex justify-between items-center mb-4 export-buttons">
                             <h3 className="text-lg font-black text-[#1e1b4b]">النتائج والنسب</h3>
-                            <div className="flex gap-2">
-                                <button onClick={() => exportToPNG('overall-stats-container', 'النتائج_والنسب')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PNG 🖼️</button>
-                                <button onClick={() => exportToPDF('overall-stats-container', 'النتائج_والنسب')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PDF 📄</button>
-                            </div>
+                            <ExportBtns
+                                onPNG={() => setPreviewConfig({ isOpen: true, type: 'PNG', elementId: 'overall-stats-container', filename: 'النتائج_والنسب.png' })}
+                                onPDF={() => setPreviewConfig({ isOpen: true, type: 'PDF', elementId: 'overall-stats-container', filename: 'النتائج_والنسب.pdf' })}
+                            />
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-6 border-b-4 border-[#1e1b4b]">
+                            <div className="modern-card transition-all duration-300 motion-safe:hover:shadow-md p-6 border-b-4 border-[#1e1b4b]">
                                 <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-2">متوسط نسبة الإنجاز</p>
                                 <div className="text-4xl font-black text-[#1e1b4b]">{dashboardStats.avgPercent}<span className="text-lg text-gray-400">%</span></div>
                             </div>
-                            <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-6 border-b-4 border-[#eab308]">
+                            <div className="modern-card transition-all duration-300 motion-safe:hover:shadow-md p-6 border-b-4 border-[#eab308]">
                                 <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-2">إجمالي الاستبانات المرسلة</p>
                                 <div className="text-4xl font-black text-[#eab308]">{dashboardStats.total}</div>
                             </div>
-                            <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-6 border-b-4 border-emerald-500">
+                            <div className="modern-card transition-all duration-300 motion-safe:hover:shadow-md p-6 border-b-4 border-emerald-500">
                                 <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-2">نقاط القوة المكتشفة</p>
                                 <div className="text-4xl font-black text-emerald-600">{dashboardStats.swot.strengths.length}</div>
                             </div>
@@ -1405,13 +1751,21 @@ function App() {
                     </div>
 
                     <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 ${!layoutPrefs.showCharts ? 'no-print' : ''}`}>
-                        <div id="dashboard-chart-container" className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-8 h-[400px] relative">
+                        <div id="dashboard-chart-container" className="modern-card transition-all duration-300 motion-safe:hover:shadow-md p-8 h-[400px] relative">
                             <div className="flex justify-between items-center mb-6">
                                 <h3 className="text-lg font-black text-[#1e1b4b] flex items-center gap-2"><Icon name="bar-chart-2" className="text-[#eab308] w-5 h-5" /> تحليل أداء المجالات (نسبة مئوية)</h3>
                                 <div className="flex gap-2 export-buttons">
-                                    <button onClick={() => exportToPNG('dashboard-chart-container', 'تحليل_المجالات')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PNG 🖼️</button>
-                                    <button onClick={() => exportToPDF('dashboard-chart-container', 'تحليل_المجالات')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PDF 📄</button>
-                                    <button onClick={() => exportChartExcel(dashboardStats.domainData, 'تحليل_المجالات')} className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold hover:bg-emerald-100 border border-emerald-100">تصدير إكسل 📊</button>
+                                    <ExportBtns
+                                        onPNG={() => setPreviewConfig({ isOpen: true, type: 'PNG', elementId: 'dashboard-chart-container', filename: 'تحليل_المجالات.png' })}
+                                        onPDF={() => setPreviewConfig({ isOpen: true, type: 'PDF', elementId: 'dashboard-chart-container', filename: 'تحليل_المجالات.pdf' })}
+                                        onExcel={() => setPreviewConfig({ 
+                                            isOpen: true, 
+                                            type: 'Excel', 
+                                            filename: 'تحليل_المجالات.xlsx', 
+                                            data: dashboardStats.domainData,
+                                            onConfirm: () => exportChartExcel(dashboardStats.domainData, 'تحليل_المجالات') 
+                                        })}
+                                    />
                                 </div>
                             </div>
                             {BarChart && (
@@ -1419,8 +1773,8 @@ function App() {
                                     <BarChart data={dashboardStats.domainData} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
                                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                                         <XAxis type="number" domain={[0, 100]} hide />
-                                        <YAxis dataKey="name" type="category" width={window.innerWidth < 768 ? 120 : 160} tick={{ textAnchor: 'start', dx: -10, fontFamily: 'Cairo', fontSize: window.innerWidth < 768 ? 10 : 12, fontWeight: 'bold', fill: '#475569' }} axisLine={false} tickLine={false} />
-                                        <Tooltip wrapperStyle={{ pointerEvents: 'none', zIndex: 1000 }} cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontFamily: 'Cairo', fontSize: '12px', fontWeight: 'bold' }} formatter={(value) => [`${value}%`, 'النسبة']} />
+                                        <YAxis dataKey="name" type="category" width={window.innerWidth < 768 ? 120 : 160} tick={{ textAnchor: 'start', dx: -10, fontFamily: 'Almarai', fontSize: window.innerWidth < 768 ? 10 : 12, fontWeight: 'bold', fill: '#475569' }} axisLine={false} tickLine={false} />
+                                        <Tooltip wrapperStyle={{ pointerEvents: 'none', zIndex: 1000 }} cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', fontFamily: 'Almarai', fontSize: '12px', fontWeight: 'bold' }} formatter={(value) => [`${value}%`, 'النسبة']} />
                                         <Bar dataKey="percentage" fill="#1e1b4b" radius={[0, 8, 8, 0]} barSize={24}>
                                             <LabelList dataKey="percentage" content={<PercentageLabel />} />
                                         </Bar>
@@ -1429,21 +1783,93 @@ function App() {
                             )}
                         </div>
 
-                        <div className={`modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg p-8 ${!layoutPrefs.showSWOT ? 'no-print' : ''}`}>
-                            <h3 className="text-lg font-black text-[#1e1b4b] mb-6 flex items-center gap-2"><Icon name="zap" className="text-rose-500 w-5 h-5" /> مصفوفة التحليل (SWOT)</h3>
-                            <div className="grid grid-cols-1 gap-4">
-                                <div className="bg-emerald-50/50 p-5 rounded-2xl border border-emerald-100">
-                                    <h4 className="font-black text-emerald-800 text-sm mb-3 flex items-center gap-2"><Icon name="trending-up" className="w-4 h-4" /> نقاط القوة (80% فأكثر)</h4>
-                                    <ul className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-1">
-                                        {dashboardStats.swot.strengths.length > 0 ? dashboardStats.swot.strengths.map(c => <li key={c.id} className="text-xs font-semibold text-emerald-900 bg-white p-2.5 rounded-lg border border-emerald-50 flex justify-between"><span>{c.text}</span><span className="font-black">{c.percentage}%</span></li>) : <li className="text-emerald-400 text-xs font-semibold p-1">لا توجد نقاط قوة مسجلة.</li>}
-                                    </ul>
-                                </div>
-                                <div className="bg-rose-50/50 p-5 rounded-2xl border border-rose-100">
-                                    <h4 className="font-black text-rose-800 text-sm mb-3 flex items-center gap-2"><Icon name="trending-down" className="w-4 h-4" /> فرص التحسين (أقل من 60%)</h4>
-                                    <ul className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-1">
-                                        {dashboardStats.swot.weaknesses.length > 0 ? dashboardStats.swot.weaknesses.map(c => <li key={c.id} className="text-xs font-semibold text-rose-900 bg-white p-2.5 rounded-lg border border-rose-50 flex justify-between"><span>{c.text}</span><span className="font-black">{c.percentage}%</span></li>) : <li className="text-rose-400 text-xs font-semibold p-1">النظام مستقر، لا توجد ملاحظات حرجة.</li>}
-                                    </ul>
-                                </div>
+                        <div className={`modern-card p-6 ${!layoutPrefs.showSWOT ? 'no-print' : ''}`}>
+                            <h3 className="text-lg font-black text-[#1e1b4b] mb-5 flex items-center gap-2"><Icon name="zap" className="text-rose-500 w-5 h-5" /> مصفوفة التحليل (SWOT)</h3>
+
+                            {/* STRENGTHS */}
+                            <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-100 mb-3">
+                                <h4 className="font-black text-emerald-800 text-sm mb-3 flex items-center gap-2">
+                                    <Icon name="trending-up" className="w-4 h-4" />
+                                    نقاط القوة <span className="mr-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{swotThresholds.strength}%+</span>
+                                </h4>
+                                {dashboardStats.swot.strengths.length > 0 ? (
+                                    <div className="space-y-2 max-h-52 overflow-y-auto custom-scrollbar pr-1">
+                                        {dashboardStats.swot.strengths.map(q => (
+                                            <div key={q.id} className="bg-white p-3 rounded-xl border border-emerald-100">
+                                                <div className="flex justify-between items-start gap-2 mb-1.5">
+                                                    <p className="text-xs font-bold text-gray-700 flex-1">{q.text}</p>
+                                                    <span className="shrink-0 text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">{q.domainName}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex-1 h-1.5 bg-emerald-100 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${q.percentage}%` }} />
+                                                    </div>
+                                                    <span className="text-[11px] font-black text-emerald-700 w-14 text-left">{q.percentage}% <span className="text-gray-400 font-semibold text-[10px]">({q.avgScore}/5)</span></span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <p className="text-emerald-400 text-xs font-semibold p-1">لا توجد نقاط قوة مسجلة بعد.</p>}
+                            </div>
+
+                            {/* OPPORTUNITIES */}
+                            <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-100 mb-3">
+                                <h4 className="font-black text-amber-800 text-sm mb-3 flex items-center gap-2">
+                                    <Icon name="target" className="w-4 h-4" />
+                                    فرص التحسين <span className="mr-1 text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{swotThresholds.weakness}%–{swotThresholds.strength - 1}%</span>
+                                </h4>
+                                {dashboardStats.swot.opportunities.length > 0 ? (
+                                    <div className="space-y-2 max-h-52 overflow-y-auto custom-scrollbar pr-1">
+                                        {dashboardStats.swot.opportunities.map(q => (
+                                            <div key={q.id} className="bg-white p-3 rounded-xl border border-amber-100">
+                                                <div className="flex justify-between items-start gap-2 mb-1.5">
+                                                    <p className="text-xs font-bold text-gray-700 flex-1">{q.text}</p>
+                                                    <span className="shrink-0 text-[10px] font-black bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">{q.domainName}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex-1 h-1.5 bg-amber-100 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-amber-400 rounded-full transition-all duration-500" style={{ width: `${q.percentage}%` }} />
+                                                    </div>
+                                                    <span className="text-[11px] font-black text-amber-700 w-14 text-left">{q.percentage}% <span className="text-gray-400 font-semibold text-[10px]">({q.avgScore}/5)</span></span>
+                                                </div>
+                                                <div className="mt-2 flex items-start gap-1.5 bg-amber-50 border border-amber-100 rounded-lg p-2">
+                                                    <Icon name="lightbulb" className="w-3 h-3 text-amber-500 mt-0.5 shrink-0" />
+                                                    <p className="text-[10px] font-semibold text-amber-800">{q.recommendation}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <p className="text-amber-400 text-xs font-semibold p-1">النتائج ضمن النطاق المقبول.</p>}
+                            </div>
+
+                            {/* WEAKNESSES */}
+                            <div className="bg-rose-50/60 p-4 rounded-2xl border border-rose-100">
+                                <h4 className="font-black text-rose-800 text-sm mb-3 flex items-center gap-2">
+                                    <Icon name="trending-down" className="w-4 h-4" />
+                                    نقاط الضعف <span className="mr-1 text-[10px] font-bold bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">أقل من {swotThresholds.weakness}%</span>
+                                </h4>
+                                {dashboardStats.swot.weaknesses.length > 0 ? (
+                                    <div className="space-y-2 max-h-52 overflow-y-auto custom-scrollbar pr-1">
+                                        {dashboardStats.swot.weaknesses.map(q => (
+                                            <div key={q.id} className="bg-white p-3 rounded-xl border border-rose-100">
+                                                <div className="flex justify-between items-start gap-2 mb-1.5">
+                                                    <p className="text-xs font-bold text-gray-700 flex-1">{q.text}</p>
+                                                    <span className="shrink-0 text-[10px] font-black bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full">{q.domainName}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex-1 h-1.5 bg-rose-100 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-rose-500 rounded-full transition-all duration-500" style={{ width: `${q.percentage}%` }} />
+                                                    </div>
+                                                    <span className="text-[11px] font-black text-rose-700 w-14 text-left">{q.percentage}% <span className="text-gray-400 font-semibold text-[10px]">({q.avgScore}/5)</span></span>
+                                                </div>
+                                                <div className="mt-2 flex items-start gap-1.5 bg-rose-50 border border-rose-100 rounded-lg p-2">
+                                                    <Icon name="lightbulb" className="w-3 h-3 text-rose-500 mt-0.5 shrink-0" />
+                                                    <p className="text-[10px] font-semibold text-rose-800">{q.recommendation}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <p className="text-rose-400 text-xs font-semibold p-1">النظام مستقر، لا توجد نقاط ضعف حرجة.</p>}
                             </div>
                         </div>
                     </div>
@@ -1462,14 +1888,14 @@ function App() {
 
         return (
             <div className="space-y-6 animate-in slide-in-from-right-8 duration-500 pb-20 print-area">
-                <div className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg bg-gradient-to-r from-blue-900 to-[#11032b] p-10 text-white border-0 no-print">
+                <div className="modern-card transition-all duration-300 motion-safe:hover:shadow-md bg-gradient-to-r from-blue-900 to-[#11032b] p-10 text-white border-0 no-print">
                     <h2 className="text-3xl font-black mb-2 flex items-center gap-3"><Icon name="archive" className="text-[#eab308]" /> أرشيف الإحصائيات الشامل</h2>
                     <p className="text-blue-200 font-semibold text-sm">عرض تفصيلي لجميع الاستبانات المرصودة في النظام.</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 no-print">
                     <div className="modern-card p-4">
-                        <p className="text-[10px] text-gray-400 font-black uppercase mb-3 flex items-center gap-1"><Icon name="folder" className="w-3 h-3"/> الفروع</p>
+                        <p className="text-[10px] text-gray-400 font-black uppercase mb-3 flex items-center gap-1"><Icon name="folder" className="w-3 h-3" /> الفروع</p>
                         <div className="flex gap-2">
                             {['مكة المكرمة', 'جدة'].map(loc => (
                                 <button key={loc} onClick={() => setArchiveFilterLoc(archiveFilterLoc === loc ? '' : loc)} className={`flex-1 py-2 rounded-lg font-bold text-xs transition-all border ${archiveFilterLoc === loc ? 'bg-[#1e1b4b] text-white border-[#1e1b4b] shadow-md' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}>{loc}</button>
@@ -1477,7 +1903,7 @@ function App() {
                         </div>
                     </div>
                     <div className="modern-card p-4">
-                        <p className="text-[10px] text-gray-400 font-black uppercase mb-3 flex items-center gap-1"><Icon name="folder" className="w-3 h-3"/> المراحل</p>
+                        <p className="text-[10px] text-gray-400 font-black uppercase mb-3 flex items-center gap-1"><Icon name="folder" className="w-3 h-3" /> المراحل</p>
                         <div className="flex gap-2">
                             {['ابتدائية', 'متوسطة', 'ثانوية'].map(stg => (
                                 <button key={stg} onClick={() => setArchiveFilterStg(archiveFilterStg === stg ? '' : stg)} className={`flex-1 py-2 rounded-lg font-bold text-xs transition-all border ${archiveFilterStg === stg ? 'bg-[#1e1b4b] text-white border-[#1e1b4b] shadow-md' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}>{stg}</button>
@@ -1485,7 +1911,7 @@ function App() {
                         </div>
                     </div>
                     <div className="modern-card p-4">
-                        <p className="text-[10px] text-gray-400 font-black uppercase mb-3 flex items-center gap-1"><Icon name="folder" className="w-3 h-3"/> الفئات المستهدفة</p>
+                        <p className="text-[10px] text-gray-400 font-black uppercase mb-3 flex items-center gap-1"><Icon name="folder" className="w-3 h-3" /> الفئات المستهدفة</p>
                         <div className="flex gap-2">
                             {['إداريين', 'طلاب', 'معلمين'].map(trg => (
                                 <button key={trg} onClick={() => setArchiveFilterTrg(archiveFilterTrg === trg ? '' : trg)} className={`flex-1 py-2 rounded-lg font-bold text-xs transition-all border ${archiveFilterTrg === trg ? 'bg-[#1e1b4b] text-white border-[#1e1b4b] shadow-md' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}>{trg}</button>
@@ -1494,14 +1920,28 @@ function App() {
                     </div>
                 </div>
 
-                <div id="archive-table-container" className="modern-card transition-all duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg overflow-hidden">
+                <div id="archive-table-container" className="modern-card motion-safe:hover:shadow-md">
                     <div className="p-4 border-b border-gray-100 flex justify-between items-center export-buttons">
                         <h3 className="font-black text-[#1e1b4b]">سجل الإحصائيات <span className="text-gray-400 text-xs mr-2">({filteredArchiveData.length} سجل)</span></h3>
-                        <div className="flex gap-2">
-                            <button onClick={() => exportToPNG('archive-table-container', 'الأرشيف_الشامل')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PNG 🖼️</button>
-                            <button onClick={() => exportToPDF('archive-table-container', 'الأرشيف_الشامل')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PDF 📄</button>
-                            <button onClick={() => exportData('excel')} className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold hover:bg-emerald-100 border border-emerald-100">تصدير إكسل 📊</button>
-                        </div>
+                        <ExportBtns
+                            onPNG={() => setPreviewConfig({ isOpen: true, type: 'PNG', elementId: 'archive-table-container', filename: 'الأرشيف_الشامل.png' })}
+                            onPDF={() => setPreviewConfig({ isOpen: true, type: 'PDF', elementId: 'archive-table-container', filename: 'الأرشيف_الشامل.pdf' })}
+                            onExcel={() => setPreviewConfig({ 
+                                isOpen: true, 
+                                type: 'Excel', 
+                                filename: 'الأرشيف_الشامل.xlsx', 
+                                data: filteredArchiveData.map(row => ({
+                                    "المدينة": row.location,
+                                    "المرحلة": row.stage,
+                                    "الفئة": row.target,
+                                    "المشاركين": row.participants,
+                                    "النسبة": `${row.percentage}%`,
+                                    "الدرجة": row.avgScore,
+                                    "تاريخ التحديث": row.updatedAt
+                                })),
+                                onConfirm: () => exportData('excel') 
+                            })}
+                        />
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-right text-sm block md:table">
@@ -1517,7 +1957,7 @@ function App() {
                             </thead>
                             <tbody className="divide-y divide-gray-100 block md:table-row-group">
                                 {filteredArchiveData.length > 0 ? filteredArchiveData.map((row, idx) => (
-                                    <tr key={idx} className="block md:table-row p-4 md:p-0 mb-4 md:mb-0 border border-gray-100 md:border-0 rounded-xl md:rounded-none hover:bg-gray-50/50 transition-colors duration-300 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-lg">
+                                    <tr key={idx} className="block md:table-row p-4 md:p-0 mb-4 md:mb-0 border border-gray-100 md:border-0 rounded-xl md:rounded-none hover:bg-gray-50/50 transition-colors">
                                         <td className="flex md:table-cell justify-between items-center p-2 md:p-4 font-bold text-[#1e1b4b] border-b md:border-0 border-gray-50"><span className="md:hidden text-xs text-gray-400">المدينة:</span>{row.location}</td>
                                         <td className="flex md:table-cell justify-between items-center p-2 md:p-4 font-semibold text-gray-600 border-b md:border-0 border-gray-50"><span className="md:hidden text-xs text-gray-400">المرحلة:</span><span className="bg-gray-100 px-2 py-1 rounded-md text-xs">{row.stage}</span></td>
                                         <td className="flex md:table-cell justify-between items-center p-2 md:p-4 font-bold text-gray-700 border-b md:border-0 border-gray-50"><span className="md:hidden text-xs text-gray-400">الفئة:</span>{row.target}</td>
@@ -1738,21 +2178,30 @@ function App() {
                                             : `المتوسط العام لأداء (${targetText}) - ${stageText}`;
                                     })()}
                                 </h3>
-                                <div className="flex gap-2 export-buttons">
-                                    <button onClick={() => exportToPNG('compare-chart-container', 'المقارنات_الإحصائية')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PNG 🖼️</button>
-                                    <button onClick={() => exportToPDF('compare-chart-container', 'المقارنات_الإحصائية')} className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 border border-gray-200">تحميل PDF 📄</button>
-                                    <button onClick={() => exportChartExcel(compareViewMode === 'domains' ? realCompareCities : overallCompareData, 'المقارنات_الإحصائية')} className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-bold hover:bg-emerald-100 border border-emerald-100">تصدير إكسل 📊</button>
-                                </div>
+                                <ExportBtns
+                                    onPNG={() => setPreviewConfig({ isOpen: true, type: 'PNG', elementId: 'compare-chart-container', filename: 'المقارنات_الإحصائية.png' })}
+                                    onPDF={() => setPreviewConfig({ isOpen: true, type: 'PDF', elementId: 'compare-chart-container', filename: 'المقارنات_الإحصائية.pdf' })}
+                                    onExcel={() => {
+                                        const data = compareViewMode === 'domains' ? realCompareCities : overallCompareData;
+                                        setPreviewConfig({ 
+                                            isOpen: true, 
+                                            type: 'Excel', 
+                                            filename: 'المقارنات_الإحصائية.xlsx', 
+                                            data: data,
+                                            onConfirm: () => exportChartExcel(data, 'المقارنات_الإحصائية') 
+                                        });
+                                    }}
+                                />
                             </div>
 
                             {BarChart && (
                                 <ResponsiveContainer width="100%" height="85%">
                                     <BarChart data={compareViewMode === 'domains' ? realCompareCities : overallCompareData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                        <XAxis dataKey="name" tick={{ fontFamily: 'Cairo', fontSize: 12, fontWeight: 'bold', fill: '#475569' }} axisLine={false} tickLine={false} />
+                                        <XAxis dataKey="name" tick={{ fontFamily: 'Almarai', fontSize: 12, fontWeight: 'bold', fill: '#475569' }} axisLine={false} tickLine={false} />
                                         <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(val) => `${val}%`} />
-                                        <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', fontFamily: 'Cairo', fontWeight: 'bold' }} formatter={(val) => [`${val}%`]} />
-                                        <Legend wrapperStyle={{ fontFamily: 'Cairo', fontWeight: 'bold', fontSize: '12px', paddingTop: '10px' }} />
+                                        <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', fontFamily: 'Almarai', fontWeight: 'bold' }} formatter={(val) => [`${val}%`]} />
+                                        <Legend wrapperStyle={{ fontFamily: 'Almarai', fontWeight: 'bold', fontSize: '12px', paddingTop: '10px' }} />
                                         <Bar name="مكة المكرمة" dataKey="مكة المكرمة" fill="#1e1b4b" radius={[6, 6, 0, 0]} barSize={compareViewMode === 'overall' ? 80 : 40}>
                                             <LabelList dataKey="مكة المكرمة" content={<PercentageLabel />} />
                                         </Bar>
@@ -1816,11 +2265,23 @@ function App() {
         </div>
     );
 
+    if (isGlobalLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]" dir="rtl">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-12 h-12 border-4 border-[#1e1b4b] border-t-transparent rounded-full animate-spin"></div>
+                    <p className="font-bold text-[#1e1b4b]">جاري مزامنة البيانات السحابية...</p>
+                </div>
+            </div>
+        );
+    }
+
     return (
+        <React.Fragment>
         <div className="flex h-screen w-full relative bg-[#f8fafc]">
 
             {toast && (
-                <div className={`fixed bottom-10 left-10 z-[100] px-6 py-4 rounded-2xl shadow-xl text-white font-black flex items-center gap-3 toast-animate ${toast.type === 'error' ? 'bg-rose-600' : 'bg-[#11032b]'}`}>
+                <div className={`fixed bottom-10 left-10 z-[100] px-6 py-4 rounded-2xl shadow-md text-white font-black flex items-center gap-3 toast-animate ${toast.type === 'error' ? 'bg-rose-600' : 'bg-[#11032b]'}`}>
                     <Icon name={toast.type === 'error' ? "alert-circle" : "check-circle"} className="w-5 h-5" />
                     {toast.msg}
                 </div>
@@ -1828,11 +2289,11 @@ function App() {
 
             {modal.isOpen && (
                 <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-white p-8 rounded-[2rem] shadow-2xl max-w-md w-full m-4">
+                    <div className="bg-white p-8 rounded-[2rem] shadow-md max-w-md w-full m-4">
                         <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto mb-4"><Icon name="alert-triangle" className="w-8 h-8 text-rose-600" /></div>
                         <h3 className="text-2xl font-black text-center text-[#1e1b4b] mb-2">{modal.title}</h3>
                         <p className="text-center text-gray-500 font-bold mb-8">{modal.message}</p>
-                        <div className="flex gap-4">
+                        <div className="flex gap-4 p-4">
                             <button onClick={() => setModal({ ...modal, isOpen: false })} className="flex-1 py-3 bg-gray-100 text-gray-600 font-black rounded-xl hover:bg-gray-200">إلغاء</button>
                             <button onClick={() => { modal.onConfirm(); setModal({ ...modal, isOpen: false }); }} className="flex-1 py-3 bg-rose-600 text-white font-black rounded-xl hover:bg-rose-700">نعم، متأكد</button>
                         </div>
@@ -1845,7 +2306,7 @@ function App() {
                 <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[50] md:hidden animate-fade-in" />
             )}
 
-            <div className={`sidebar w-[260px] h-full flex flex-col z-[60] shadow-[4px_0_24px_rgba(0,0,0,0.05)] shrink-0 bg-[#ffffff] border-l border-gray-100 fixed md:relative right-0 top-0 bottom-0 transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+            <div className={`sidebar w-[260px] h-full flex flex-col z-[60]  shrink-0 bg-[#ffffff] border-l border-gray-100 fixed md:relative right-0 top-0 bottom-0 transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
                 <div className="p-8 flex flex-col items-center border-b border-gray-50 mt-2 relative">
                     <button onClick={() => setIsSidebarOpen(false)} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-rose-600 md:hidden bg-gray-50 hover:bg-rose-50 rounded-lg transition-colors">
                         <Icon name="x" className="w-5 h-5" />
@@ -1922,8 +2383,13 @@ function App() {
             </div>
 
         </div>
+
+        <PreviewModal
+            config={previewConfig}
+            onClose={() => setPreviewConfig(null)}
+        />
+        </React.Fragment>
     );
 }
-
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
