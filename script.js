@@ -358,25 +358,92 @@ const PreviewModal = ({ config, onClose }) => {
     );
 };
 
+// ============================================================
+// مساعد: قراءة آمنة من localStorage مع Fallback
+// ============================================================
+function readLocalCache(key, fallback) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (raw) return JSON.parse(raw);
+    } catch (e) {
+        console.warn(`[QMS Cache] فشل قراءة ${key}:`, e);
+    }
+    return fallback;
+}
+
+const LS_KEY = 'falah_v10_data';
+
 function App() {
-    // === State ===
+    // ============================================================
+    // === تهيئة الحالة: تُقرأ فوراً من localStorage كـ seed أولي ===
+    // === ثم تُحدَّث من Supabase عند اكتمال الجلب              ===
+    // ============================================================
     const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('falah_auth') === 'true');
     const [loginCreds, setLoginCreds] = useState({ username: '', password: '' });
     const [loginError, setLoginError] = useState(false);
-    const [previewConfig, setPreviewConfig] = useState(null); // { isOpen, type, filename, onConfirm }
+    const [previewConfig, setPreviewConfig] = useState(null);
 
     const [activeTab, setActiveTab] = useState('home');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [activeSurveyForm, setActiveSurveyForm] = useState(null);
-    const [adminSubTab, setAdminSubTab] = useState('timing'); // Default admin tab focused on control
+    const [adminSubTab, setAdminSubTab] = useState('timing');
 
-    const [dict, setDict] = useState(DEFAULT_DICTIONARY);
-    const [surveys, setSurveys] = useState(INIT_SURVEYS);
-    const [assessments, setAssessments] = useState({});
+    // --- البيانات الحرجة: تُقرأ من localStorage أولاً فوراً ---
+    const [dict, setDict] = useState(() => {
+        const cached = readLocalCache(LS_KEY, null);
+        return cached?.dict ?? DEFAULT_DICTIONARY;
+    });
 
+    const [surveys, setSurveys] = useState(() => {
+        const cached = readLocalCache(LS_KEY, null);
+        return cached?.surveys ?? INIT_SURVEYS;
+    });
+
+    const [assessments, setAssessments] = useState(() => {
+        const cached = readLocalCache(LS_KEY, null);
+        return cached?.assessments ?? {};
+    });
+
+    const [logos, setLogos] = useState(() => {
+        const cached = readLocalCache(LS_KEY, null);
+        return cached?.logos ?? DEFAULT_LOGOS;
+    });
+
+    // Layout & Print Settings: تُقرأ من localStorage أولاً
+    const [layoutPrefs, setLayoutPrefs] = useState(() => {
+        const DEFAULT_LAYOUT = {
+            showHeader: true, showCharts: true, showSWOT: true, showTables: true, showGlobal: true,
+            reportTitle: "تقرير التميز المؤسسي الموحد (Global QMS)",
+            preparedByText: "مُعد التقرير",
+            directorTitle: "مشرف الجودة بمدارس الفلاح بجدة",
+            directorName: "أ. ياسر محمد شعبان",
+            approverTitle: "الاعتماد - الإدارة العليا",
+            approverName: "أ. علي السليماني"
+        };
+        const cached = readLocalCache(LS_KEY, null);
+        return cached?.layoutPrefs ?? DEFAULT_LAYOUT;
+    });
+
+    const [currentSubmissions, setCurrentSubmissions] = useState({});
     const [isGlobalLoading, setIsGlobalLoading] = useState(true);
     const isRemoteUpdate = useRef(false);
 
+    // ============================================================
+    // === مزامنة فورية إلى localStorage عند أي تغيير حرج      ===
+    // ============================================================
+    useEffect(() => {
+        if (isGlobalLoading) return; // لا تكتب حتى يكتمل أول جلب من Supabase
+        try {
+            const snapshot = { dict, surveys, assessments, logos, layoutPrefs, _savedAt: new Date().toISOString() };
+            localStorage.setItem(LS_KEY, JSON.stringify(snapshot));
+        } catch (e) {
+            console.warn('[QMS Cache] فشل الحفظ في localStorage:', e);
+        }
+    }, [dict, surveys, assessments, logos, layoutPrefs, isGlobalLoading]);
+
+    // ============================================================
+    // === جلب البيانات من Supabase عند التحميل                 ===
+    // ============================================================
     useEffect(() => {
         // Supabase Auth Listener
         supabase.auth.getSession().then(({ data: { session } }) => {
@@ -387,37 +454,45 @@ function App() {
             if (!sessionStorage.getItem('falah_auth')) setIsAuthenticated(!!session);
         });
 
-        // Fetch Survey Responses & Global App Config
+        // جلب الإعدادات العامة والردود من Supabase
         const fetchGlobalData = async () => {
             setIsGlobalLoading(true);
-            const [configRes, responsesRes] = await Promise.all([
-                supabase.from('app_config').select('*').eq('id', 'global').maybeSingle(),
-                supabase.from('survey_responses').select('survey_key, answers, created_at').order('created_at', { ascending: true })
-            ]);
+            try {
+                const [configRes, responsesRes] = await Promise.all([
+                    supabase.from('app_config').select('*').eq('id', 'global').maybeSingle(),
+                    supabase.from('survey_responses').select('survey_key, answers, created_at').order('created_at', { ascending: true })
+                ]);
 
-            isRemoteUpdate.current = true;
-            if (configRes.data) {
-                if (configRes.data.dict_data) setDict(configRes.data.dict_data);
-                if (configRes.data.surveys_data) setSurveys(configRes.data.surveys_data);
-                if (configRes.data.layout_data) setLayoutPrefs(configRes.data.layout_data);
-                if (configRes.data.logos_data) setLogos(configRes.data.logos_data);
-            }
+                isRemoteUpdate.current = true;
 
-            if (responsesRes.data && responsesRes.data.length > 0) {
-                const grouped = {};
-                responsesRes.data.forEach(row => {
-                    const k = row.survey_key;
-                    if (!grouped[k]) grouped[k] = [];
-                    // Each row.answers is already the full submission object {timestamp, answers}
-                    grouped[k].push(row.answers);
-                });
-                setAssessments(grouped);
+                // تحديث من Supabase إذا كانت البيانات موجودة هناك (تتفوق على localStorage)
+                if (configRes.data) {
+                    if (configRes.data.dict_data) setDict(configRes.data.dict_data);
+                    if (configRes.data.surveys_data) setSurveys(configRes.data.surveys_data);
+                    if (configRes.data.layout_data) setLayoutPrefs(configRes.data.layout_data);
+                    if (configRes.data.logos_data) setLogos(configRes.data.logos_data);
+                }
+                // إذا لم تكن هناك بيانات في Supabase، تبقى القيم من localStorage كما هي (تم ضبطها مسبقاً)
+
+                if (responsesRes.data && responsesRes.data.length > 0) {
+                    const grouped = {};
+                    responsesRes.data.forEach(row => {
+                        const k = row.survey_key;
+                        if (!grouped[k]) grouped[k] = [];
+                        grouped[k].push(row.answers);
+                    });
+                    setAssessments(grouped);
+                }
+            } catch (networkError) {
+                // عند فشل الاتصال بـ Supabase: تبقى البيانات المحلية من localStorage سارية
+                console.warn('[QMS] تعذّر الاتصال بـ Supabase — يُستخدم الكاش المحلي:', networkError);
+            } finally {
+                setIsGlobalLoading(false);
             }
-            setIsGlobalLoading(false);
         };
         fetchGlobalData();
 
-        // Real-time Subscriptions
+        // الاشتراك في التحديثات الفورية (Real-time)
         const configSub = supabase.channel('config-channel')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'app_config', filter: "id=eq.global" }, (payload) => {
                 if (payload.new) {
@@ -448,19 +523,6 @@ function App() {
             supabase.removeChannel(responsesSub);
         };
     }, []);
-    const [currentSubmissions, setCurrentSubmissions] = useState({});
-    const [logos, setLogos] = useState(DEFAULT_LOGOS);
-
-    // Layout & Print Settings with Customization Fields
-    const [layoutPrefs, setLayoutPrefs] = useState({
-        showHeader: true, showCharts: true, showSWOT: true, showTables: true, showGlobal: true,
-        reportTitle: "تقرير التميز المؤسسي الموحد (Global QMS)",
-        preparedByText: "مُعد التقرير",
-        directorTitle: "مشرف الجودة بمدارس الفلاح بجدة",
-        directorName: "أ. ياسر محمد شعبان",
-        approverTitle: "الاعتماد - الإدارة العليا",
-        approverName: "أ. علي السليماني"
-    });
 
     const [toast, setToast] = useState(null);
     const [modal, setModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, type: 'danger' });
@@ -704,7 +766,9 @@ function App() {
                 surveys_data: surveys,
                 layout_data: layoutPrefs,
                 logos_data: logos
-            }).then();
+            }).then(({ error }) => {
+                if (error) console.error('[Supabase Sync Error] فشل حفظ الإعدادات (RLS أو شبكة):', error.message, error);
+            });
         }, 1500);
 
         return () => clearTimeout(timer);
@@ -763,23 +827,18 @@ function App() {
     // --- Handlers ---
     const handleLogin = async (e) => {
         e.preventDefault();
-        
-        // حساب الإدارة الثابت
-        if (loginCreds.username === 'host@alfalah.com' && loginCreds.password === '1234') {
-            setIsAuthenticated(true);
-            sessionStorage.setItem('falah_auth', 'true');
-            setLoginError(false);
-            return;
-        }
 
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
             email: loginCreds.username,
             password: loginCreds.password
         });
-        if (error) {
+
+        if (error || !data?.session) {
             setLoginError(true);
         } else {
             setLoginError(false);
+            setIsAuthenticated(true);
+            sessionStorage.setItem('falah_auth', 'true');
         }
     };
 
@@ -866,7 +925,12 @@ function App() {
     };
 
     const clearSurveyData = (target) => {
-        showConfirm('تفريغ البيانات', `هل أنت متأكد من مسح جميع الردود والتقييمات الخاصة باستبانة (${target})؟ لن يتم حذف أسئلة الاستبانة، بل مسح الردود فقط.`, () => {
+        showConfirm('تفريغ البيانات', `هل أنت متأكد من مسح جميع الردود والتقييمات الخاصة باستبانة (${target})؟ لن يتم حذف أسئلة الاستبانة، بل مسح الردود فقط.`, async () => {
+            // مسح الردود من Supabase أيضاً
+            const keysToDelete = Object.keys(assessments).filter(k => k.endsWith(`-${target}`));
+            if (keysToDelete.length > 0) {
+                await supabase.from('survey_responses').delete().in('survey_key', keysToDelete);
+            }
             setAssessments(prev => {
                 const next = { ...prev };
                 Object.keys(next).forEach(key => {
@@ -880,7 +944,12 @@ function App() {
     };
 
     const deleteSurvey = (id, target) => {
-        showConfirm('حذف الاستبانة', `تحذير: أنت على وشك حذف الاستبانة (${target}) نهائياً، سيتم مسح الاستبانة وجميع البيانات والمعايير المرتبطة بها! لا يمكن التراجع عن هذا الإجراء.`, () => {
+        showConfirm('حذف الاستبانة', `تحذير: أنت على وشك حذف الاستبانة (${target}) نهائياً، سيتم مسح الاستبانة وجميع البيانات والمعايير المرتبطة بها! لا يمكن التراجع عن هذا الإجراء.`, async () => {
+            // حذف الردود من Supabase أيضاً
+            const keysToDelete = Object.keys(assessments).filter(k => k.endsWith(`-${target}`));
+            if (keysToDelete.length > 0) {
+                await supabase.from('survey_responses').delete().in('survey_key', keysToDelete);
+            }
             setSurveys(prev => prev.filter(s => s.id !== id));
             setDict(prev => { const next = { ...prev }; delete next[target]; return next; });
             setAssessments(prev => {
